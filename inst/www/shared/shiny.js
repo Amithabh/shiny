@@ -350,7 +350,7 @@
     }
 
     // Don't mutate list argument
-    list = slice(list, 0);
+    list = list.slice(0);
 
     for (var chunkSize = 1; chunkSize < list.length; chunkSize *= 2) {
       for (var i = 0; i < list.length; i += chunkSize * 2) {
