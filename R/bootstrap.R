@@ -793,3 +793,12 @@ htmlOutput <- function(outputId) {
 uiOutput <- function(outputId) {
   htmlOutput(outputId)
 }
+
+#' @export
+downloadButton <- function(outputId, label="Download") {
+  tags$a(id=outputId,
+         class='btn shiny-download-button',
+         href='',
+         target='_blank',
+         label)
+}

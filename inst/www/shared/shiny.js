@@ -910,6 +910,17 @@
     }
   });
   outputBindings.register(htmlOutputBinding, 'shiny.htmlOutput');
+  
+  var downloadButtonOutputBinding = new OutputBinding();
+  $.extend(downloadButtonOutputBinding, {
+    find: function(scope) {
+      return $(scope).find('a.shiny-download-button');
+    },
+    renderValue: function(el, data) {
+      $(el).attr('href', data);
+    }
+  })
+  outputBindings.register(downloadButtonOutputBinding, 'shiny.downloadButton');
 
 
   var InputBinding = exports.InputBinding = function() {
