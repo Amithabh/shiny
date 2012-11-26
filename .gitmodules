@@ -1,0 +1,3 @@
+[submodule "inst/shiny-server"]
+	path = inst/shiny-server
+	url = git@github.com:rstudio/shiny-server.git
