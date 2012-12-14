@@ -1,44 +1,8 @@
-Dependencies <- setRefClass(
-  'Dependencies',
-  fields = list(
-    .dependencies = 'Map'
-  ),
-  methods = list(
-    register = function() {
-      ctx <- .getReactiveEnvironment()$currentContext()
-      if (!.dependencies$containsKey(ctx$id)) {
-        .dependencies$set(ctx$id, ctx)
-        ctx$onInvalidate(function() {
-          .dependencies$remove(ctx$id)
-        })
-      }
-    },
-    invalidate = function() {
-      lapply(
-        .dependencies$values(),
-        function(ctx) {
-          ctx$invalidateHint()
-          ctx$invalidate()
-          NULL
-        }
-      )
-    },
-    invalidateHint = function() {
-      lapply(
-        .dependencies$values(),
-        function(dep.ctx) {
-          dep.ctx$invalidateHint()
-          NULL
-        })
-    }
-  )
-)
-
 Values <- setRefClass(
   'Values',
   fields = list(
     .values = 'environment',
-    .dependencies = 'environment',
+    .dependants = 'environment',
     # Dependencies for the list of names
     .namesDeps = 'Dependencies',
     # Dependencies for all values
@@ -47,15 +11,15 @@ Values <- setRefClass(
   methods = list(
     initialize = function() {
       .values <<- new.env(parent=emptyenv())
-      .dependencies <<- new.env(parent=emptyenv())
+      .dependants <<- new.env(parent=emptyenv())
     },
     get = function(key) {
       ctx <- .getReactiveEnvironment()$currentContext()
       dep.key <- paste(key, ':', ctx$id, sep='')
-      if (!exists(dep.key, where=.dependencies, inherits=FALSE)) {
-        assign(dep.key, ctx, pos=.dependencies, inherits=FALSE)
+      if (!exists(dep.key, where=.dependants, inherits=FALSE)) {
+        assign(dep.key, ctx, pos=.dependants, inherits=FALSE)
         ctx$onInvalidate(function() {
-          rm(list=dep.key, pos=.dependencies, inherits=FALSE)
+          rm(list=dep.key, pos=.dependants, inherits=FALSE)
         })
       }
       
@@ -77,13 +41,14 @@ Values <- setRefClass(
       
       assign(key, value, pos=.values, inherits=FALSE)
       dep.keys <- objects(
-        pos=.dependencies,
+        pos=.dependants,
         pattern=paste('^\\Q', key, ':', '\\E', '\\d+$', sep=''),
         all.names=TRUE
       )
       lapply(
-        mget(dep.keys, envir=.dependencies),
+        mget(dep.keys, envir=.dependants),
         function(ctx) {
+          ctx$validateDependants()
           ctx$invalidateHint()
           ctx$invalidate()
           NULL
@@ -142,9 +107,9 @@ Observable <- setRefClass(
   'Observable',
   fields = list(
     .func = 'function',
-    .dependencies = 'Dependencies',
     .initialized = 'logical',
-    .value = 'ANY'
+    .value = 'ANY',
+    .ctx = 'ANY'
   ),
   methods = list(
     initialize = function(func) {
@@ -158,10 +123,16 @@ Observable <- setRefClass(
     getValue = function() {
       if (!.initialized) {
         .initialized <<- TRUE
-        .self$.updateValue()
+        .ctx <<- Context$new()
+        .ctx$onInvalidate(function() {
+          .self$.updateValue()
+        })
+        .ctx$run(function() {
+          .value <<- try(.func(), silent=FALSE)
+        })
+      } else {
+         .ctx$addDependant()
       }
-      
-      .dependencies$register()
       
       if (identical(class(.value), 'try-error'))
         stop(attr(.value, 'condition'))
@@ -169,19 +140,16 @@ Observable <- setRefClass(
     },
     .updateValue = function() {
       old.value <- .value
-      
-      ctx <- Context$new()
-      ctx$onInvalidate(function() {
+      old.ctx <- .ctx
+      .ctx <<- Context$new()
+      .ctx$onInvalidate(function() {
         .self$.updateValue()
       })
-      ctx$onInvalidateHint(function() {
-        .dependencies$invalidateHint()
-      })
-      ctx$run(function() {
+      .ctx$run(function() {
         .value <<- try(.func(), silent=FALSE)
       })
       if (!identical(old.value, .value)) {
-        .dependencies$invalidate()
+        old.ctx$invalidateDependants()
       }
     }
   )

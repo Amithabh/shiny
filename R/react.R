@@ -1,3 +1,51 @@
+Dependencies <- setRefClass(
+  'Dependencies',
+  fields = list(
+    .dependencies = 'Map'
+  ),
+  methods = list(
+    register = function() {
+      ctx <- .getReactiveEnvironment()$currentContext()
+      if (is.null(ctx))
+        return()
+      if (!.dependencies$containsKey(ctx$id)) {
+        .dependencies$set(ctx$id, ctx)
+        ctx$onInvalidate(function() {
+          .dependencies$remove(ctx$id)
+        })
+      }
+    },
+    invalidate = function() {
+      lapply(
+        .dependencies$values(),
+        function(ctx) {
+          ctx$invalidateHint()
+          ctx$invalidate()
+          NULL
+        }
+      )
+    },
+    invalidateHint = function() {
+      lapply(
+        .dependencies$values(),
+        function(dep.ctx) {
+          dep.ctx$invalidateHint()
+          NULL
+        })
+    },
+    validate = function(){
+      lapply(
+        .dependencies$values(),
+        function(ctx) {
+          ctx$validate()
+          ctx$validateDependants()
+          NULL
+        }
+      )
+    }
+  )
+)
+
 Context <- setRefClass(
   'Context',
   fields = list(
@@ -5,13 +53,24 @@ Context <- setRefClass(
     .invalidated = 'logical',
     .invalidatedHint = 'logical',
     .callbacks = 'list',
-    .hintCallbacks = 'list'
+    .hintCallbacks = 'list',
+    .dependants = 'Dependencies'
   ),
   methods = list(
     initialize = function() {
-      id <<- .getReactiveEnvironment()$nextId()
+      id <<- .getReactiveEnvironment()$nextId() 
+      .dependants$register()
       .invalidated <<- FALSE
       .invalidatedHint <<- FALSE
+    },
+    addDependant = function(){
+      .dependants$register()
+    },
+    invalidateDependants = function(){
+      .dependants$invalidate()
+    },
+    validateDependants = function(){
+      .dependants$validate()
     },
     run = function(func) {
       "Run the provided function under this context."
@@ -39,6 +98,16 @@ Context <- setRefClass(
       .getReactiveEnvironment()$addPendingInvalidate(.self)
       NULL
     },
+    validate = function(){
+      "Unschedule this context for invalidation, typically done by dependencies
+        so that they run first."
+      if (!.invalidated)
+        return()
+      .invalidated <<- FALSE
+      .invalidatedHint <<- FALSE
+      .getReactiveEnvironment()$removePendingInvalidate(id)
+      NULL
+    },
     onInvalidate = function(func) {
       "Register a function to be called when this context is invalidated.
         If this context is already invalidated, the function is called
@@ -50,7 +119,10 @@ Context <- setRefClass(
       NULL
     },
     onInvalidateHint = function(func) {
-      .hintCallbacks <<- c(.hintCallbacks, func)
+      if (.invalidatedHint)
+        func()
+      else
+        .hintCallbacks <<- c(.hintCallbacks, func)
     },
     executeCallbacks = function() {
       "For internal use only."
@@ -74,17 +146,13 @@ ReactiveEnvironment <- setRefClass(
     initialize = function() {
       .currentContext <<- NULL
       .nextId <<- 0L
-      .pendingInvalidate <<- list()
+      .pendingInvalidate <<- Map$new()
     },
     nextId = function() {
       .nextId <<- .nextId + 1L
       return(as.character(.nextId))
     },
     currentContext = function() {
-      if (is.null(.currentContext))
-        stop('Operation not allowed without an active reactive context. ',
-             '(You tried to do something that can only be done from inside a ',
-             'reactive function.)')
       return(.currentContext)
     },
     runWith = function(ctx, func) {
@@ -94,16 +162,23 @@ ReactiveEnvironment <- setRefClass(
       func()
     },
     addPendingInvalidate = function(ctx) {
-      .pendingInvalidate <<- c(.pendingInvalidate, ctx)
+      .pendingInvalidate$set(ctx$id,ctx)
+    },
+    removePendingInvalidate = function(id){
+      .pendingInvalidate$remove(id)
+    },
+    pendingInvalidates = function(){
+      return(.pendingInvalidates)
     },
     flush = function() {
-      while (length(.pendingInvalidate) > 0) {
-        contexts <- .pendingInvalidate
-        .pendingInvalidate <<- list()
-        lapply(contexts, function(ctx) {
+      ctxKeys <- .pendingInvalidate$keys()
+      while (length(ctxKeys) > 0) {
+        lapply(ctxKeys, function(key) {
+          ctx <- .pendingInvalidate$remove(key)
           ctx$executeCallbacks()
           NULL
         })
+        ctxKeys <- .pendingInvalidate$keys()
       }
     }
   )
