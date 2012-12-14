@@ -173,11 +173,8 @@ ReactiveEnvironment <- setRefClass(
     flush = function() {
       ctxKeys <- .pendingInvalidate$keys()
       while (length(ctxKeys) > 0) {
-        lapply(ctxKeys, function(key) {
-          ctx <- .pendingInvalidate$remove(key)
-          ctx$executeCallbacks()
-          NULL
-        })
+        ctx <- .pendingInvalidate$remove(ctxKeys[1])
+        ctx$executeCallbacks()
         ctxKeys <- .pendingInvalidate$keys()
       }
     }
