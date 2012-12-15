@@ -1,85 +1,99 @@
 Values <- setRefClass(
   'Values',
   fields = list(
-    .values = 'environment',
-    .dependants = 'environment',
-    # Dependencies for the list of names
-    .namesDeps = 'Dependencies',
-    # Dependencies for all values
-    .allDeps = 'Dependencies'
+    .values = 'environment'
   ),
   methods = list(
-    initialize = function() {
+    initialize = function(lst=NULL) {
       .values <<- new.env(parent=emptyenv())
-      .dependants <<- new.env(parent=emptyenv())
+      if (!is.null(lst))
+         mset(lst)
     },
     get = function(key) {
-      ctx <- .getReactiveEnvironment()$currentContext()
-      dep.key <- paste(key, ':', ctx$id, sep='')
-      if (!exists(dep.key, where=.dependants, inherits=FALSE)) {
-        assign(dep.key, ctx, pos=.dependants, inherits=FALSE)
-        ctx$onInvalidate(function() {
-          rm(list=dep.key, pos=.dependants, inherits=FALSE)
-        })
-      }
-      
       if (!exists(key, where=.values, inherits=FALSE))
-        NULL
-      else
-        base::get(key, pos=.values, inherits=FALSE)
+        return(NULL)
+
+      v <- base::get(key, pos=.values, inherits=FALSE)
+      ctx <- .getReactiveEnvironment()$currentContext()
+      v$dependants$register(ctx)
+
+      v$val
     },
     set = function(key, value) {
       if (exists(key, where=.values, inherits=FALSE)) {
-        if (identical(base::get(key, pos=.values, inherits=FALSE), value)) {
-          return(invisible())
-        }
+        if (identical(.values$key$val, value)) 
+          return(invisible(.values$key$val))
+      } else {
+        assign(key,
+          list(val=value,dependants=Dependencies$new()), 
+          pos=.values, inherits=FALSE)
       }
-      else {
-        .namesDeps$invalidate()
-      }
-      .allDeps$invalidate()
-      
-      assign(key, value, pos=.values, inherits=FALSE)
-      dep.keys <- objects(
-        pos=.dependants,
-        pattern=paste('^\\Q', key, ':', '\\E', '\\d+$', sep=''),
-        all.names=TRUE
-      )
-      lapply(
-        mget(dep.keys, envir=.dependants),
-        function(ctx) {
-          ctx$invalidateHint()
-          ctx$invalidate()
-          NULL
-        }
-      )
-      invisible()
+
+      .values[[key]]$val <<- value
+      .values[[key]]$dependants$invalidate()
+
+      invisible(value)
+    },
+    names = function() {
+      ls(.values, all.names=TRUE)
     },
     mset = function(lst) {
+      .values <<- new.env(parent=emptyenv())
       lapply(base::names(lst),
              function(name) {
                .self$set(name, lst[[name]])
              })
+      invisible(lst)
     },
-    names = function() {
-      .namesDeps$register()
-      return(ls(.values, all.names=TRUE))
-    },
-    toList = function() {
-      .allDeps$register()
-      return(as.list(.values))
+    mget = function() {
+      lstNames <- names()
+      lst <- lapply(lstNames,
+          function(name) {
+            .self$get(name)
+      })
+      names(lst) <- lstNames
+      lst
     }
   )
 )
 
-`[.Values` <- function(values, name) {
-  values$get(name)
+reactiveValues <- function(values=NULL){
+   val <- list(impl=NULL)
+   if (is.null(values) || class(values)=='list'){
+     val$impl <- Values$new(values)
+   } else if (class(values)=='Values'){
+     val$impl <- values
+   } else {
+     stop("Need a list or Values object")
+   }
+   class(val) <- 'reactiveValues'
+   val
 }
 
-`[<-.Values` <- function(values, name, value) {
-  values$set(name, value)
-  return(values)
+`$.reactiveValues` <- function(x,name){
+  cat('class',class(x),'\n')
+  x[['impl']]$get(name)
 }
+
+`$<-.reactiveValues` <- function(x,name,value){
+  x[['impl']]$set(name,value)
+  x
+}
+
+`<-.reactiveValues` <- function(x,value){
+   if(!is('list',value)) stop("Value not a list!")
+   invisible(x$mset(value))
+}
+
+as.list.reactiveValues <- function(x, ...) {
+  x[['impl']]$mget()
+}
+
+names.reactiveValues <- function(x) {
+  x[['impl']]$names()
+}
+
+print.reactiveValues <- function(x,...) print(unclass(as.list(x)),...)
 
 .createValuesReader <- function(values) {
   acc <- list(impl=values)
@@ -99,14 +113,15 @@ names.reactvaluesreader <- function(x) {
 
 #' @S3method as.list reactvaluesreader
 as.list.reactvaluesreader <- function(x, ...) {
-  x[['impl']]$toList()
+  x[['impl']]$mget()
 }
+
+print.reactvaluesreader <- function(x,...) print(unclass(as.list(x)),...)
 
 Observable <- setRefClass(
   'Observable',
   fields = list(
     .func = 'function',
-    .initialized = 'logical',
     .value = 'ANY',
     .ctx = 'ANY'
   ),
@@ -117,16 +132,9 @@ Observable <- setRefClass(
              "or more parameters; only functions without parameters can be ",
              "reactive.")
       .func <<- func
-      .initialized <<- FALSE
     },
     getValue = function() {
-      if (!.initialized || .ctx$isInvalidated()) {
-        .initialized <<- TRUE
-        .self$.updateValue()
-      }
-
-      .ctx$addDependant()
-
+      .self$.updateValue()
       if (identical(class(.value), 'try-error'))
         stop(attr(.value, 'condition'))
       return(.value)
@@ -138,9 +146,12 @@ Observable <- setRefClass(
       .ctx$onInvalidate(function() {
         .self$.updateValue()
       })
-      .ctx$run(function() {
-        .value <<- try(.func(), silent=FALSE)
-      })
+      .ctx$runDependencies()
+      if (.ctx$isInvalidated()){
+         .ctx$run(function() {
+           .value <<- try(.func(), silent=FALSE)
+         })
+      }
       if (!is(old.ctx,'uninitializedField')) {
         old.ctx$validate()
         if (!identical(old.value, .value))

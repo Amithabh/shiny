@@ -4,8 +4,7 @@ Dependencies <- setRefClass(
     .dependencies = 'Map'
   ),
   methods = list(
-    register = function() {
-      ctx <- .getReactiveEnvironment()$currentContext()
+    register = function(ctx) {
       if (is.null(ctx))
         return()
       if (!.dependencies$containsKey(ctx$id)) {
@@ -43,16 +42,22 @@ Context <- setRefClass(
     .invalidatedHint = 'logical',
     .callbacks = 'list',
     .hintCallbacks = 'list',
-    .dependants = 'Dependencies'
+    .dependants = 'Dependencies',
+    .dependencies = 'Dependencies'
   ),
   methods = list(
     initialize = function() {
       id <<- .getReactiveEnvironment()$nextId() 
-      .dependants$register()
+      addDependendant()
       .invalidatedHint <<- FALSE
     },
     addDependant = function(){
-      .dependants$register()
+      ctx <- .getReactiveEnvironment()$currentContext()
+      .dependants$register(ctx)
+      ctx$addDependency(.self)
+    },
+    addDependency = function(ctx){
+      .dependencies$register(ctx)
     },
     invalidateDependants = function(){
       .dependants$invalidate()
