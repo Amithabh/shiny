@@ -32,16 +32,6 @@ Dependencies <- setRefClass(
           dep.ctx$invalidateHint()
           NULL
         })
-    },
-    validate = function(){
-      lapply(
-        .dependencies$values(),
-        function(ctx) {
-          ctx$validate()
-          ctx$validateDependants()
-          NULL
-        }
-      )
     }
   )
 )
@@ -50,7 +40,6 @@ Context <- setRefClass(
   'Context',
   fields = list(
     id = 'character',
-    .invalidated = 'logical',
     .invalidatedHint = 'logical',
     .callbacks = 'list',
     .hintCallbacks = 'list',
@@ -60,7 +49,6 @@ Context <- setRefClass(
     initialize = function() {
       id <<- .getReactiveEnvironment()$nextId() 
       .dependants$register()
-      .invalidated <<- FALSE
       .invalidatedHint <<- FALSE
     },
     addDependant = function(){
@@ -68,9 +56,6 @@ Context <- setRefClass(
     },
     invalidateDependants = function(){
       .dependants$invalidate()
-    },
-    validateDependants = function(){
-      .dependants$validate()
     },
     run = function(func) {
       "Run the provided function under this context."
@@ -92,29 +77,19 @@ Context <- setRefClass(
     invalidate = function() {
       "Schedule this context for invalidation. It will not actually be
         invalidated until the next call to \\code{\\link{flushReact}}."
-      if (.invalidated)
-        return()
-      .invalidated <<- TRUE
       .getReactiveEnvironment()$addPendingInvalidate(.self)
       NULL
     },
+    isInvalidated = function(){
+      .getReactiveEnvironment()$isPendingInvalidate(.self)
+    },
     validate = function(){
-      "Unschedule this context for invalidation, typically done by dependencies
-        so that they run first."
-      if (!.invalidated)
-        return()
-      .invalidated <<- FALSE
-      .invalidatedHint <<- FALSE
-      .getReactiveEnvironment()$removePendingInvalidate(id)
-      NULL
+      .getReactiveEnvironment()$removePendingInvalidate(.self)
     },
     onInvalidate = function(func) {
       "Register a function to be called when this context is invalidated.
         If this context is already invalidated, the function is called
         immediately."
-      if (.invalidated)
-        func()
-      else
         .callbacks <<- c(.callbacks, func)
       NULL
     },
@@ -164,17 +139,18 @@ ReactiveEnvironment <- setRefClass(
     addPendingInvalidate = function(ctx) {
       .pendingInvalidate$set(ctx$id,ctx)
     },
-    removePendingInvalidate = function(id){
-      .pendingInvalidate$remove(id)
+    removePendingInvalidate = function(ctx){
+      .pendingInvalidate$remove(ctx$id)
     },
-    pendingInvalidates = function(){
-      return(.pendingInvalidates)
+    isPendingInvalidate = function(ctx){
+      .pendingInvalidate$containsKey(ctx$id)
     },
     flush = function() {
       ctxKeys <- .pendingInvalidate$keys()
       while (length(ctxKeys) > 0) {
-        ctx <- .pendingInvalidate$remove(ctxKeys[1])
+        ctx <- .pendingInvalidate$get(ctxKeys[1])
         ctx$executeCallbacks()
+        .pendingInvalidate$remove(ctxKeys[1])
         ctxKeys <- .pendingInvalidate$keys()
       }
     }

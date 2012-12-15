@@ -48,7 +48,6 @@ Values <- setRefClass(
       lapply(
         mget(dep.keys, envir=.dependants),
         function(ctx) {
-          ctx$validateDependants()
           ctx$invalidateHint()
           ctx$invalidate()
           NULL
@@ -121,19 +120,13 @@ Observable <- setRefClass(
       .initialized <<- FALSE
     },
     getValue = function() {
-      if (!.initialized) {
+      if (!.initialized || .ctx$isInvalidated()) {
         .initialized <<- TRUE
-        .ctx <<- Context$new()
-        .ctx$onInvalidate(function() {
-          .self$.updateValue()
-        })
-        .ctx$run(function() {
-          .value <<- try(.func(), silent=FALSE)
-        })
-      } else {
-         .ctx$addDependant()
+        .self$.updateValue()
       }
-      
+
+      .ctx$addDependant()
+
       if (identical(class(.value), 'try-error'))
         stop(attr(.value, 'condition'))
       return(.value)
@@ -148,8 +141,10 @@ Observable <- setRefClass(
       .ctx$run(function() {
         .value <<- try(.func(), silent=FALSE)
       })
-      if (!identical(old.value, .value)) {
-        old.ctx$invalidateDependants()
+      if (!is(old.ctx,'uninitializedField')) {
+        old.ctx$validate()
+        if (!identical(old.value, .value))
+          old.ctx$invalidateDependants()
       }
     }
   )
