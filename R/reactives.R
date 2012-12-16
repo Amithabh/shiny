@@ -121,16 +121,20 @@ print.reactvaluesreader <- function(x,...) print(unclass(as.list(x)),...)
 Observable <- setRefClass(
   'Observable',
   fields = list(
+    .re = 'ANY',
     .func = 'function',
     .value = 'ANY',
     .ctx = 'ANY'
   ),
   methods = list(
-    initialize = function(func) {
+    initialize = function(func,re=NULL) {
+      if(is.null(re) || class(re)!='ReactiveEnvironment')
+        stop("Need a ReactiveEnvironment object")
       if (length(formals(func)) > 0)
         stop("Can't make a reactive function from a function that takes one ",
              "or more parameters; only functions without parameters can be ",
              "reactive.")
+      .re <<- re
       .func <<- func
     },
     getValue = function() {
@@ -142,7 +146,7 @@ Observable <- setRefClass(
     .updateValue = function() {
       old.value <- .value
       old.ctx <- .ctx
-      .ctx <<- Context$new()
+      .ctx <<- .re$newContext()
       .ctx$onInvalidate(function() {
         .self$.updateValue()
       })
@@ -183,12 +187,12 @@ Observable <- setRefClass(
 #'   from within other reactive functions.)
 #'   
 #' @export
-reactive <- function(x) {
+reactive <- function(x,...) {
   UseMethod("reactive")
 }
 #' @S3method reactive function
-reactive.function <- function(x) {
-  return(Observable$new(x)$getValue)
+reactive.function <- function(x,...) {
+  return(Observable$new(x,.getReactiveEnvironment())$getValue)
 }
 #' @S3method reactive default
 reactive.default <- function(x) {
@@ -198,26 +202,29 @@ reactive.default <- function(x) {
 Observer <- setRefClass(
   'Observer',
   fields = list(
+    .re = 'ANY',
     .func = 'function',
     .hintCallbacks = 'list'
   ),
   methods = list(
-    initialize = function(func) {
+    initialize = function(func,re) {
+      if(is.null(re) || class(re)!='ReactiveEnvironment')
+        stop("Need a ReactiveEnvironment object")
       if (length(formals(func)) > 0)
         stop("Can't make an observer from a function that takes parameters; ",
              "only functions without parameters can be reactive.")
-
+      .re <<- re
       .func <<- func
 
       # Defer the first running of this until flushReact is called
-      ctx <- Context$new()
+      ctx <- .re$newContext()
       ctx$onInvalidate(function() {
         run()
       })
       ctx$invalidate()
     },
     run = function() {
-      ctx <- Context$new()
+      ctx <- .re$newContext()
       ctx$onInvalidate(function() {
         run()
       })

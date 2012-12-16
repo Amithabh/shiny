@@ -38,6 +38,7 @@ Dependencies <- setRefClass(
 Context <- setRefClass(
   'Context',
   fields = list(
+    .re = 'ANY',
     id = 'character',
     .invalidatedHint = 'logical',
     .callbacks = 'list',
@@ -46,13 +47,15 @@ Context <- setRefClass(
     .dependencies = 'Dependencies'
   ),
   methods = list(
-    initialize = function() {
-      id <<- .getReactiveEnvironment()$nextId() 
-      addDependendant()
+    initialize = function(re=NULL) {
+      if (is.null(re) || class(re)!='ReactiveEnvironment')
+        stop("Need a ReactiveEnvironment object")
+      .re <<- re
+      id <<- .re$nextId() 
       .invalidatedHint <<- FALSE
     },
     addDependant = function(){
-      ctx <- .getReactiveEnvironment()$currentContext()
+      ctx <- .re$currentContext()
       .dependants$register(ctx)
       ctx$addDependency(.self)
     },
@@ -64,8 +67,10 @@ Context <- setRefClass(
     },
     run = function(func) {
       "Run the provided function under this context."
-      env <- .getReactiveEnvironment()
-      env$runWith(.self, func)
+      .re$runWith(.self, func)
+    },
+    runDependencies = function(){
+       # TODO: loop through all dependencies calling their run() method
     },
     invalidateHint = function() {
       "Let this context know it may or may not be invalidated very soon; that
@@ -82,11 +87,11 @@ Context <- setRefClass(
     invalidate = function() {
       "Schedule this context for invalidation. It will not actually be
         invalidated until the next call to \\code{\\link{flushReact}}."
-      .getReactiveEnvironment()$addPendingInvalidate(.self)
+      .re$addPendingInvalidate(.self)
       NULL
     },
     isInvalidated = function(){
-      .getReactiveEnvironment()$isPendingInvalidate(.self)
+      .re$isPendingInvalidate(.self)
     },
     validate = function(){
       .getReactiveEnvironment()$removePendingInvalidate(.self)
@@ -95,7 +100,7 @@ Context <- setRefClass(
       "Register a function to be called when this context is invalidated.
         If this context is already invalidated, the function is called
         immediately."
-        .callbacks <<- c(.callbacks, func)
+      .callbacks <<- c(.callbacks, func)
       NULL
     },
     onInvalidateHint = function(func) {
@@ -131,6 +136,9 @@ ReactiveEnvironment <- setRefClass(
     nextId = function() {
       .nextId <<- .nextId + 1L
       return(as.character(.nextId))
+    },
+    newContext = function(){
+      Context$new(.self)
     },
     currentContext = function() {
       return(.currentContext)

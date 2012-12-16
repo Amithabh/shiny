@@ -72,7 +72,7 @@ ShinyApp <- setRefClass(
           }
           else
             .invalidatedOutputValues$set(name, value)
-        })
+        },.getReactiveEnvironment())
         
         obs$onInvalidateHint(function() {
           showProgress(name)
@@ -218,7 +218,7 @@ ShinyApp <- setRefClass(
           return(httpResponse(404, 'text/html', '<h1>Not Found</h1>'))
         
         filename <- ifelse(is.function(download$filename),
-                           Context$new()$run(download$filename),
+                           .getReactiveEnvironment()$newContext()$run(download$filename),
                            download$filename)
 
         # If the URL does not contain the filename, and the desired filename
