@@ -1,21 +1,19 @@
-Values <- setRefClass(
-  'Values',
+ReactiveValues <- setRefClass(
+  'ReactiveValues',
+  contains = 'ReactiveObject',
   fields = list(
     .values = 'environment'
   ),
   methods = list(
-    initialize = function(lst=NULL) {
-      .values <<- new.env(parent=emptyenv())
-      if (!is.null(lst))
-         mset(lst)
+    initialize = function(...) {
+      callSuper(...)
     },
     get = function(key) {
       if (!exists(key, where=.values, inherits=FALSE))
         return(NULL)
 
       v <- base::get(key, pos=.values, inherits=FALSE)
-      ctx <- .getReactiveEnvironment()$currentContext()
-      v$dependants$register(ctx)
+      v$dependants$register()
 
       v$val
     },
@@ -25,7 +23,7 @@ Values <- setRefClass(
           return(invisible(.values$key$val))
       } else {
         assign(key,
-          list(val=value,dependants=Dependencies$new()), 
+          list(val=value,dependants=.re$NewDependencies()), 
           pos=.values, inherits=FALSE)
       }
 
@@ -57,17 +55,10 @@ Values <- setRefClass(
   )
 )
 
-reactiveValues <- function(values=NULL){
-   val <- list(impl=NULL)
-   if (is.null(values) || class(values)=='list'){
-     val$impl <- Values$new(values)
-   } else if (class(values)=='Values'){
-     val$impl <- values
-   } else {
-     stop("Need a list or Values object")
-   }
-   class(val) <- 'reactiveValues'
-   val
+reactiveValues <- function(re){
+  val$impl <- ReactiveValues$new(re)
+  class(val) <- 'reactiveValues'
+  val
 }
 
 `$.reactiveValues` <- function(x,name){
@@ -115,40 +106,35 @@ names.reactvaluesreader <- function(x) {
 as.list.reactvaluesreader <- function(x, ...) {
   x[['impl']]$mget()
 }
-
 print.reactvaluesreader <- function(x,...) print(unclass(as.list(x)),...)
 
-Observable <- setRefClass(
-  'Observable',
+ReactiveFunction <- setRefClass(
+  'ReactiveFunction',
+  contains = 'ReactiveObject',
   fields = list(
-    .re = 'ANY',
     .func = 'function',
     .value = 'ANY',
     .ctx = 'ANY'
   ),
   methods = list(
-    initialize = function(func,re=NULL) {
-      if(is.null(re) || class(re)!='ReactiveEnvironment')
-        stop("Need a ReactiveEnvironment object")
+    initialize = function(func,...) {
+      callSuper(...)
       if (length(formals(func)) > 0)
         stop("Can't make a reactive function from a function that takes one ",
              "or more parameters; only functions without parameters can be ",
              "reactive.")
-      .re <<- re
+      .ctx <<- .re$NewContext()
       .func <<- func
+      .ctx$onInvalidate(function() {
+        .self$getValue()
+      })
     },
-    getValue = function() {
-      .self$.updateValue()
-      if (identical(class(.value), 'try-error'))
-        stop(attr(.value, 'condition'))
-      return(.value)
-    },
-    .updateValue = function() {
+    getValue = function(...) {
       old.value <- .value
       old.ctx <- .ctx
-      .ctx <<- .re$newContext()
+      .ctx <<- .re$NewContext()
       .ctx$onInvalidate(function() {
-        .self$.updateValue()
+        .self$getValue()
       })
       .ctx$runDependencies()
       if (.ctx$isInvalidated()){
@@ -156,11 +142,17 @@ Observable <- setRefClass(
            .value <<- try(.func(), silent=FALSE)
          })
       }
-      if (!is(old.ctx,'uninitializedField')) {
-        old.ctx$validate()
-        if (!identical(old.value, .value))
-          old.ctx$invalidateDependants()
-      }
+      old.ctx$validate()
+      if (!identical(old.value, .value))
+        old.ctx$invalidateDependants()
+
+      if (identical(class(.value), 'try-error'))
+        stop(attr(.value, 'condition'))
+      return(.value)
+    },
+    callWith = function(...){
+    },
+    observeWith = function(func){
     }
   )
 )
@@ -187,85 +179,6 @@ Observable <- setRefClass(
 #'   from within other reactive functions.)
 #'   
 #' @export
-reactive <- function(x,...) {
-  UseMethod("reactive")
-}
-#' @S3method reactive function
-reactive.function <- function(x,...) {
-  return(Observable$new(x,.getReactiveEnvironment())$getValue)
-}
-#' @S3method reactive default
-reactive.default <- function(x) {
-  stop("Don't know how to make this object reactive!")
-}
-
-Observer <- setRefClass(
-  'Observer',
-  fields = list(
-    .re = 'ANY',
-    .func = 'function',
-    .hintCallbacks = 'list'
-  ),
-  methods = list(
-    initialize = function(func,re) {
-      if(is.null(re) || class(re)!='ReactiveEnvironment')
-        stop("Need a ReactiveEnvironment object")
-      if (length(formals(func)) > 0)
-        stop("Can't make an observer from a function that takes parameters; ",
-             "only functions without parameters can be reactive.")
-      .re <<- re
-      .func <<- func
-
-      # Defer the first running of this until flushReact is called
-      ctx <- .re$newContext()
-      ctx$onInvalidate(function() {
-        run()
-      })
-      ctx$invalidate()
-    },
-    run = function() {
-      ctx <- .re$newContext()
-      ctx$onInvalidate(function() {
-        run()
-      })
-      ctx$onInvalidateHint(function() {
-        lapply(.hintCallbacks, function(func) {
-          func()
-          NULL
-        })
-      })
-      ctx$run(.func)
-    },
-    onInvalidateHint = function(func) {
-      .hintCallbacks <<- c(.hintCallbacks, func)
-    }
-  )
-)
-
-#' Create a reactive observer
-#' 
-#' Creates an observer from the given function. An observer is like a reactive 
-#' function in that it can read reactive values and call reactive functions, and
-#' will automatically re-execute when those dependencies change. But unlike 
-#' reactive functions, it doesn't yield a result and can't be used as an input 
-#' to other reactive functions. Thus, observers are only useful for their side 
-#' effects (for example, performing I/O).
-#' 
-#' Another contrast between reactive functions and observers is their execution
-#' strategy. Reactive functions use lazy evaluation; that is, when their
-#' dependencies change, they don't re-execute right away but rather wait until
-#' they are called by someone else. Indeed, if they are not called then they
-#' will never re-execute. In contrast, observers use eager evaluation; as soon
-#' as their dependencies change, they schedule themselves to re-execute.
-#' 
-#' @param func The function to observe. It must not have any parameters. Any 
-#'   return value from this function will be ignored.
-#'   
-#' @export
-observe <- function(func) {
-  Observer$new(func)
-  invisible()
-}
 
 #' Timer
 #' 

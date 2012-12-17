@@ -1,12 +1,85 @@
+ReactiveEnvironment <- setRefClass(
+  'ReactiveEnvironment',
+  fields = c('.currentContext','.nextId', '.pendingInvalidate'),
+  methods = list(
+    initialize = function() {
+      .currentContext <<- NULL
+      .nextId <<- 0L
+      .pendingInvalidate <<- Map$new()
+    },
+    currentContext = function() {
+      .currentContext
+    },
+    nextId = function() {
+      .nextId <<- .nextId + 1L
+      return(as.character(.nextId))
+    },
+    addPendingInvalidate = function(ctx) {
+      .pendingInvalidate$set(ctx$id,ctx)
+    },
+    removePendingInvalidate = function(ctx){
+      .pendingInvalidate$remove(ctx$id)
+    },
+    isPendingInvalidate = function(ctx){
+      .pendingInvalidate$containsKey(ctx$id)
+    },
+    runWith = function(ctx, func) {
+      old.ctx <- .currentContext
+      .currentContext <<- ctx
+      on.exit(.currentContext <<- old.ctx)
+      func()
+    },
+    flush = function() {
+      ctxKeys <- .pendingInvalidate$keys()
+      while (length(ctxKeys) > 0) {
+        ctx <- .pendingInvalidate$get(ctxKeys[1])
+        ctx$executeCallbacks()
+        .pendingInvalidate$remove(ctxKeys[1])
+        ctxKeys <- .pendingInvalidate$keys()
+      }
+    },
+    NewDependencies = function(){
+      Dependencies$new(.self)
+    },
+    NewContext = function(){
+      ctx <- Context$new(.self)
+      ctx$id <- nextid()
+      ctx
+    },
+    NewReactiveValues = function(){
+      ReactiveValues$new(.self)
+    },
+    NewReactiveFunction = function(func){
+      ReactiveFunction$new(func,.self)
+    }
+  )
+)
+
+ReactiveObject <- setRefClass(
+  'ReactiveObject',
+  fields = list(
+    .re = 'ReactiveEnvironment'
+  )
+)
+
 Dependencies <- setRefClass(
   'Dependencies',
+  contains = 'ReactiveObject',
   fields = list(
     .dependencies = 'Map'
   ),
   methods = list(
+    initialize = function(...){
+      callSuper(...)
+    },
     register = function(ctx) {
-      if (is.null(ctx))
+      if (!is.null(ctx))
+        .ctx <- ctx
+      else if (!is.null(.re$currentContext()))
+        .ctx <- .re$currentContext()
+      else
         return()
+
       if (!.dependencies$containsKey(ctx$id)) {
         .dependencies$set(ctx$id, ctx)
         ctx$onInvalidate(function() {
@@ -37,22 +110,21 @@ Dependencies <- setRefClass(
 
 Context <- setRefClass(
   'Context',
+  contains = 'ReactiveObject',
   fields = list(
-    .re = 'ANY',
     id = 'character',
     .invalidatedHint = 'logical',
     .callbacks = 'list',
     .hintCallbacks = 'list',
-    .dependants = 'Dependencies',
-    .dependencies = 'Dependencies'
+    .dependants = 'ANY',
+    .dependencies = 'ANY'
   ),
   methods = list(
-    initialize = function(re=NULL) {
-      if (is.null(re) || class(re)!='ReactiveEnvironment')
-        stop("Need a ReactiveEnvironment object")
-      .re <<- re
-      id <<- .re$nextId() 
+    initialize = function(...) {
+      callSuper(...)
       .invalidatedHint <<- FALSE
+      .dependants <<- .re$NewDependencies()
+      .dependencies <<- .re$NewDependencies()
     },
     addDependant = function(){
       ctx <- .re$currentContext()
@@ -120,52 +192,6 @@ Context <- setRefClass(
           # TODO: Callbacks in app
         })
       })
-    }
-  )
-)
-
-ReactiveEnvironment <- setRefClass(
-  'ReactiveEnvironment',
-  fields = c('.currentContext', '.nextId', '.pendingInvalidate'),
-  methods = list(
-    initialize = function() {
-      .currentContext <<- NULL
-      .nextId <<- 0L
-      .pendingInvalidate <<- Map$new()
-    },
-    nextId = function() {
-      .nextId <<- .nextId + 1L
-      return(as.character(.nextId))
-    },
-    newContext = function(){
-      Context$new(.self)
-    },
-    currentContext = function() {
-      return(.currentContext)
-    },
-    runWith = function(ctx, func) {
-      old.ctx <- .currentContext
-      .currentContext <<- ctx
-      on.exit(.currentContext <<- old.ctx)
-      func()
-    },
-    addPendingInvalidate = function(ctx) {
-      .pendingInvalidate$set(ctx$id,ctx)
-    },
-    removePendingInvalidate = function(ctx){
-      .pendingInvalidate$remove(ctx$id)
-    },
-    isPendingInvalidate = function(ctx){
-      .pendingInvalidate$containsKey(ctx$id)
-    },
-    flush = function() {
-      ctxKeys <- .pendingInvalidate$keys()
-      while (length(ctxKeys) > 0) {
-        ctx <- .pendingInvalidate$get(ctxKeys[1])
-        ctx$executeCallbacks()
-        .pendingInvalidate$remove(ctxKeys[1])
-        ctxKeys <- .pendingInvalidate$keys()
-      }
     }
   )
 )
