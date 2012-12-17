@@ -317,27 +317,29 @@ ReactiveFunction <- setRefClass(
   methods = list(
     initialize = function(func,...) {
       callSuper(...)
-      if (length(formals(func)) > 0)
-        stop("Can't make a reactive function from a function that takes one ",
-             "or more parameters; only functions without parameters can be ",
-             "reactive.")
       .ctx <<- .re$NewContext()
       .func <<- func
+
       .ctx$onInvalidate(function() {
         .self$getValue()
       })
     },
     getValue = function(...) {
+
+      calledArgs <- list(...)
+
       old.value <- .value
       old.ctx <- .ctx
+
       .ctx <<- .re$NewContext()
+      .ctx$.hintCallbacks <<- old.ctx$.hintCallbacks
       .ctx$onInvalidate(function() {
-        .self$getValue()
+        do.call(.self$getValue,calledArgs)
       })
       .ctx$runDependencies()
       if (.ctx$isInvalidated()){
          .ctx$run(function() {
-           .value <<- try(.func(), silent=FALSE)
+           .value <<- try(do.call(.func,calledArgs), silent=FALSE)
          })
       }
       old.ctx$validate()
@@ -348,9 +350,8 @@ ReactiveFunction <- setRefClass(
         stop(attr(.value, 'condition'))
       return(.value)
     },
-    callWith = function(...){
-    },
     observeWith = function(func){
+      .ctx$onInvalidateHint(func)
     }
   )
 )
