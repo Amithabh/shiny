@@ -196,18 +196,161 @@ Context <- setRefClass(
   )
 )
 
-.reactiveEnvironment <- ReactiveEnvironment$new()
-.getReactiveEnvironment <- function() {
-  .reactiveEnvironment
+ReactiveValues <- setRefClass(
+  'ReactiveValues',
+  contains = 'ReactiveObject',
+  fields = list(
+    .values = 'environment'
+  ),
+  methods = list(
+    initialize = function(...) {
+      callSuper(...)
+    },
+    get = function(key) {
+      if (!exists(key, where=.values, inherits=FALSE))
+        return(NULL)
+
+      v <- base::get(key, pos=.values, inherits=FALSE)
+      v$dependants$register()
+
+      v$val
+    },
+    set = function(key, value) {
+      if (exists(key, where=.values, inherits=FALSE)) {
+        if (identical(.values$key$val, value)) 
+          return(invisible(.values$key$val))
+      } else {
+        assign(key,
+          list(val=value,dependants=.re$NewDependencies()), 
+          pos=.values, inherits=FALSE)
+      }
+
+      .values[[key]]$val <<- value
+      .values[[key]]$dependants$invalidate()
+
+      invisible(value)
+    },
+    names = function() {
+      ls(.values, all.names=TRUE)
+    },
+    mset = function(lst) {
+      .values <<- new.env(parent=emptyenv())
+      lapply(base::names(lst),
+             function(name) {
+               .self$set(name, lst[[name]])
+             })
+      invisible(lst)
+    },
+    mget = function() {
+      lstNames <- names()
+      lst <- lapply(lstNames,
+          function(name) {
+            .self$get(name)
+      })
+      names(lst) <- lstNames
+      lst
+    }
+  )
+)
+
+reactiveValues <- function(re){
+  val$impl <- ReactiveValues$new(re)
+  class(val) <- 'reactiveValues'
+  val
 }
 
-# Causes any pending invalidations to run.
-flushReact <- function() {
-  .getReactiveEnvironment()$flush()
+`$.reactiveValues` <- function(x,name){
+  cat('class',class(x),'\n')
+  x[['impl']]$get(name)
 }
 
-# Retrieves the current reactive context, or errors if there is no reactive
-# context active at the moment.
-getCurrentContext <- function() {
-  .getReactiveEnvironment()$currentContext()
+`$<-.reactiveValues` <- function(x,name,value){
+  x[['impl']]$set(name,value)
+  x
 }
+
+`<-.reactiveValues` <- function(x,value){
+   if(!is('list',value)) stop("Value not a list!")
+   invisible(x$mset(value))
+}
+
+as.list.reactiveValues <- function(x, ...) {
+  x[['impl']]$mget()
+}
+
+names.reactiveValues <- function(x) {
+  x[['impl']]$names()
+}
+
+print.reactiveValues <- function(x,...) print(unclass(as.list(x)),...)
+
+.createValuesReader <- function(values) {
+  acc <- list(impl=values)
+  class(acc) <- 'reactvaluesreader'
+  return(acc)
+}
+
+#' @S3method $ reactvaluesreader
+`$.reactvaluesreader` <- function(x, name) {
+  x[['impl']]$get(name)
+}
+
+#' @S3method names reactvaluesreader
+names.reactvaluesreader <- function(x) {
+  x[['impl']]$names()
+}
+
+#' @S3method as.list reactvaluesreader
+as.list.reactvaluesreader <- function(x, ...) {
+  x[['impl']]$mget()
+}
+print.reactvaluesreader <- function(x,...) print(unclass(as.list(x)),...)
+
+ReactiveFunction <- setRefClass(
+  'ReactiveFunction',
+  contains = 'ReactiveObject',
+  fields = list(
+    .func = 'function',
+    .value = 'ANY',
+    .ctx = 'ANY'
+  ),
+  methods = list(
+    initialize = function(func,...) {
+      callSuper(...)
+      if (length(formals(func)) > 0)
+        stop("Can't make a reactive function from a function that takes one ",
+             "or more parameters; only functions without parameters can be ",
+             "reactive.")
+      .ctx <<- .re$NewContext()
+      .func <<- func
+      .ctx$onInvalidate(function() {
+        .self$getValue()
+      })
+    },
+    getValue = function(...) {
+      old.value <- .value
+      old.ctx <- .ctx
+      .ctx <<- .re$NewContext()
+      .ctx$onInvalidate(function() {
+        .self$getValue()
+      })
+      .ctx$runDependencies()
+      if (.ctx$isInvalidated()){
+         .ctx$run(function() {
+           .value <<- try(.func(), silent=FALSE)
+         })
+      }
+      old.ctx$validate()
+      if (!identical(old.value, .value))
+        old.ctx$invalidateDependants()
+
+      if (identical(class(.value), 'try-error'))
+        stop(attr(.value, 'condition'))
+      return(.value)
+    },
+    callWith = function(...){
+    },
+    observeWith = function(func){
+    }
+  )
+)

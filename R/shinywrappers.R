@@ -3,6 +3,22 @@ suppressPackageStartupMessages({
   library(xtable)
 })
 
+.reactiveEnvironment <- ReactiveEnvironment$new()
+.getReactiveEnvironment <- function() {
+  .reactiveEnvironment
+}
+
+# Causes any pending invalidations to run.
+flushReact <- function() {
+  .getReactiveEnvironment()$flush()
+}
+
+# Retrieves the current reactive context, or errors if there is no reactive
+# context active at the moment.
+getCurrentContext <- function() {
+  .getReactiveEnvironment()$currentContext()
+}
+
 #' Plot Output
 #' 
 #' Creates a reactive plot that is suitable for assigning to an \code{output} 
@@ -248,4 +264,62 @@ downloadHandler <- function(filename, content, contentType=NA) {
   return(function(shinyapp, name, ...) {
     shinyapp$registerDownload(name, filename, contentType, content)
   })
+}
+
+#' Timer
+#' 
+#' Creates a reactive timer with the given interval. A reactive timer is like a 
+#' reactive value, except reactive values are triggered when they are set, while
+#' reactive timers are triggered simply by the passage of time.
+#' 
+#' \link[=reactive]{Reactive functions} and observers that want to be 
+#' invalidated by the timer need to call the timer function that 
+#' \code{reactiveTimer} returns, even if the current time value is not actually 
+#' needed.
+#' 
+#' See \code{\link{invalidateLater}} as a safer and simpler alternative.
+#' 
+#' @param intervalMs How often to fire, in milliseconds
+#' @return A no-parameter function that can be called from a reactive context, 
+#'   in order to cause that context to be invalidated the next time the timer 
+#'   interval elapses. Calling the returned function also happens to yield the 
+#'   current time (as in \code{\link{Sys.time}}).
+#' @seealso invalidateLater
+#' @export
+reactiveTimer <- function(intervalMs=1000) {
+  dependencies <- Map$new()
+  timerCallbacks$schedule(intervalMs, function() {
+    timerCallbacks$schedule(intervalMs, sys.function())
+    lapply(
+      dependencies$values(),
+      function(dep.ctx) {
+        dep.ctx$invalidate()
+        NULL
+      })
+  })
+  return(function() {
+    ctx <- .getReactiveEnvironment()$currentContext()
+    if (!dependencies$containsKey(ctx$id)) {
+      dependencies$set(ctx$id, ctx)
+      ctx$onInvalidate(function() {
+        dependencies$remove(ctx$id)
+      })
+    }
+    return(Sys.time())
+  })
+}
+
+#' Scheduled Invalidation
+#' 
+#' Schedules the current reactive context to be invalidated in the given number 
+#' of milliseconds.
+#' @param millis Approximate milliseconds to wait before invalidating the
+#'   current reactive context.
+#' @export
+invalidateLater <- function(millis) {
+  ctx <- .getReactiveEnvironment()$currentContext()
+  timerCallbacks$schedule(millis, function() {
+    ctx$invalidate()
+  })
+  invisible()
 }
