@@ -33,7 +33,7 @@ ShinyApp <- setRefClass(
       .invalidatedOutputErrors <<- Map$new()
       # TODO: Put file upload context in user/app-specific dir if possible
       .fileUploadContext <<- FileUploadContext$new()
-      .re <<- .getReactiveEnvironment()
+      .re <<- .getReactiveSystem()
       session <<- .re$NewReactiveValues()
       
       token <<- createUniqueId(16)
@@ -74,7 +74,7 @@ ShinyApp <- setRefClass(
           }
           else
             .invalidatedOutputValues$set(name, value)
-        },.getReactiveEnvironment())
+        },.getReactiveSystem())
         
         obs$onInvalidateHint(function() {
           showProgress(name)
@@ -220,7 +220,7 @@ ShinyApp <- setRefClass(
           return(httpResponse(404, 'text/html', '<h1>Not Found</h1>'))
         
         filename <- ifelse(is.function(download$filename),
-                           .getReactiveEnvironment()$newContext()$run(download$filename),
+                           .getReactiveSystem()$NewContext()$run(download$filename),
                            download$filename)
 
         # If the URL does not contain the filename, and the desired filename
@@ -237,7 +237,7 @@ ShinyApp <- setRefClass(
         
         tmpdata <- tempfile()
         on.exit(unlink(tmpdata))
-        result <- try(Context$new()$run(function() { download$func(tmpdata) }))
+        result <- try(.getReactiveSystem()$NewContext()$run(function() { download$func(tmpdata) }))
         if (is(result, 'try-error')) {
           return(httpResponse(500, 'text/plain', 
                               attr(result, 'condition')$message))

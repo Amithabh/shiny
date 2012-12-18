@@ -1,11 +1,21 @@
-ReactiveEnvironment <- setRefClass(
-  'ReactiveEnvironment',
-  fields = c('.currentContext','.nextId', '.pendingInvalidate'),
+ReactiveSystem <- setRefClass(
+  'ReactiveSystem',
+  fields = c('.currentContext','.nextId', '.pendingInvalidate','.envir',
+             'setup','input','output'),
   methods = list(
-    initialize = function() {
+    initialize = function(setup=NULL) {
       .currentContext <<- NULL
       .nextId <<- 0L
       .pendingInvalidate <<- Map$new()
+      .envir <<- new.env(emptyenv())
+      fixEnvironment()
+
+      if (!is.null(setup) && is.function(setup)){
+        setup <<- setup
+        input <<- .self$NewValues()
+        output <<- Map$new()
+        local({ setup(input=input,output=output) })
+      }
     },
     currentContext = function() {
       .currentContext
@@ -23,6 +33,26 @@ ReactiveEnvironment <- setRefClass(
     isPendingInvalidate = function(ctx){
       .pendingInvalidate$containsKey(ctx$id)
     },
+    fixEnvironment = function(){
+      list2env(
+        list(
+          .re = .self,
+          reactive.function = function(x) {
+            .re$NewReactiveFunction(x,.re=.re)$getValue
+          }
+        ),
+        .envir)
+    },
+    addToEnvironment = function(...){
+      fixEnvironment()
+      list2env(
+        list(...),
+        .envir)
+      fixEnvironment()
+    },
+    getEnvironment = function(){
+      list2env(as.list(.envir))
+    },
     runWith = function(ctx, func) {
       old.ctx <- .currentContext
       .currentContext <<- ctx
@@ -39,32 +69,30 @@ ReactiveEnvironment <- setRefClass(
       }
     },
     NewDependencies = function(){
-      Dependencies$new(.self)
+      Dependencies$new(.re=.self)
     },
     NewContext = function(){
-      ctx <- Context$new(.self)
+      ctx <- Context$new(.re=.self)
       ctx$id <- nextid()
       ctx
     },
     NewReactiveValues = function(){
-      ReactiveValues$new(.self)
+      reactiveValues(ReactiveValues$new(.re=.self))
     },
     NewReactiveFunction = function(func){
-      ReactiveFunction$new(func,.self)
+      ReactiveFunction$new(func,.re=.self)
     }
   )
 )
 
 ReactiveObject <- setRefClass(
   'ReactiveObject',
-  fields = list(
-    .re = 'ReactiveEnvironment'
-  )
+  fields = list('.re'='ReactiveSystem')
 )
 
 Dependencies <- setRefClass(
   'Dependencies',
-  contains = 'ReactiveObject',
+  contains = c('ReactiveObject'),
   fields = list(
     .dependencies = 'Map'
   ),
@@ -72,7 +100,7 @@ Dependencies <- setRefClass(
     initialize = function(...){
       callSuper(...)
     },
-    register = function(ctx) {
+    register = function(ctx=NULL) {
       if (!is.null(ctx))
         .ctx <- ctx
       else if (!is.null(.re$currentContext()))
@@ -110,7 +138,7 @@ Dependencies <- setRefClass(
 
 Context <- setRefClass(
   'Context',
-  contains = 'ReactiveObject',
+  contains = c('ReactiveObject'),
   fields = list(
     id = 'character',
     .invalidatedHint = 'logical',
@@ -121,10 +149,10 @@ Context <- setRefClass(
   ),
   methods = list(
     initialize = function(...) {
-      callSuper(...)
       .invalidatedHint <<- FALSE
       .dependants <<- .re$NewDependencies()
       .dependencies <<- .re$NewDependencies()
+      callSuper(...)
     },
     addDependant = function(){
       ctx <- .re$currentContext()
@@ -166,7 +194,7 @@ Context <- setRefClass(
       .re$isPendingInvalidate(.self)
     },
     validate = function(){
-      .getReactiveEnvironment()$removePendingInvalidate(.self)
+      .getReactiveSystem()$removePendingInvalidate(.self)
     },
     onInvalidate = function(func) {
       "Register a function to be called when this context is invalidated.
@@ -198,14 +226,11 @@ Context <- setRefClass(
 
 ReactiveValues <- setRefClass(
   'ReactiveValues',
-  contains = 'ReactiveObject',
+  contains = c('ReactiveObject'),
   fields = list(
     .values = 'environment'
   ),
   methods = list(
-    initialize = function(...) {
-      callSuper(...)
-    },
     get = function(key) {
       if (!exists(key, where=.values, inherits=FALSE))
         return(NULL)
@@ -254,7 +279,7 @@ ReactiveValues <- setRefClass(
 )
 
 reactiveValues <- function(re){
-  val$impl <- ReactiveValues$new(re)
+  val = list(impl=re)
   class(val) <- 'reactiveValues'
   val
 }
@@ -308,7 +333,7 @@ print.reactvaluesreader <- function(x,...) print(unclass(as.list(x)),...)
 
 ReactiveFunction <- setRefClass(
   'ReactiveFunction',
-  contains = 'ReactiveObject',
+  contains = c('ReactiveObject'),
   fields = list(
     .func = 'function',
     .value = 'ANY',
@@ -316,17 +341,19 @@ ReactiveFunction <- setRefClass(
   ),
   methods = list(
     initialize = function(func,...) {
-      callSuper(...)
       .ctx <<- .re$NewContext()
       .func <<- func
+
+      func.env <- environment(.func)
+      environment(.fun) <- .re$getEnvironment()
+      parent.env(environment(.fun)) <- func.env
 
       .ctx$onInvalidate(function() {
         .self$getValue()
       })
+      callSuper(...)
     },
     getValue = function(...) {
-
-      calledArgs <- list(...)
 
       old.value <- .value
       old.ctx <- .ctx
@@ -334,12 +361,12 @@ ReactiveFunction <- setRefClass(
       .ctx <<- .re$NewContext()
       .ctx$.hintCallbacks <<- old.ctx$.hintCallbacks
       .ctx$onInvalidate(function() {
-        do.call(.self$getValue,calledArgs)
+        .self$getValue()
       })
       .ctx$runDependencies()
       if (.ctx$isInvalidated()){
          .ctx$run(function() {
-           .value <<- try(do.call(.func,calledArgs), silent=FALSE)
+           .value <<- try(.func(), silent=FALSE)
          })
       }
       old.ctx$validate()

@@ -1,5 +1,6 @@
-export(ReactiveEnvironment)
+export(ReactiveSystem)
 export(ReactiveValues)
+export(ReactiveFunction)
 export(a)
 export(addResourcePath)
 export(animationOptions)

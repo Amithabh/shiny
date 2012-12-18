@@ -3,14 +3,14 @@ suppressPackageStartupMessages({
   library(xtable)
 })
 
-.reactiveEnvironment <- ReactiveEnvironment$new()
-.getReactiveEnvironment <- function() {
-  .reactiveEnvironment
+.reactiveSystem <- ReactiveSystem$new()
+.getReactiveSystem <- function() {
+  .reactiveSystem
 }
 
 # Causes any pending invalidations to run.
 flushReact <- function() {
-  .getReactiveEnvironment()$flush()
+  .getReactiveSystem()$flush()
 }
 
 #' Create a Reactive Function
@@ -41,7 +41,7 @@ reactive <- function(x) {
 
 #' @S3method reactive function
 reactive.function <- function(x) {
-  .getReactiveEnvironment$NewReactiveFunction(x)$getValue
+  .getReactiveSystem$NewReactiveFunction(x)$getValue
 }
 
 #' @S3method reactive default
@@ -170,7 +170,7 @@ reactiveTable <- function(func, ...) {
                                           '"',
                                           sep=''), ...)),
       collapse="\n"))
-  },.getReactiveEnvironment())
+  },.getReactiveSystem())
 }
 
 #' Printable Output
@@ -192,7 +192,7 @@ reactiveTable <- function(func, ...) {
 reactivePrint <- function(func) {
   reactive(function() {
     return(paste(capture.output(print(func())), collapse="\n"))
-  },.getReactiveEnvironment())
+  },.getReactiveSystem())
 }
 
 #' Text Output
@@ -215,7 +215,7 @@ reactivePrint <- function(func) {
 reactiveText <- function(func) {
   reactive(function() {
     return(paste(capture.output(cat(func())), collapse="\n"))
-  },.getReactiveEnvironment())
+  },.getReactiveSystem())
 }
 
 #' UI Output
@@ -247,7 +247,7 @@ reactiveUI <- function(func) {
       return(NULL)
     # Wrap result in tagList in case it is an ordinary list
     return(as.character(tagList(result)))
-  },.getReactiveEnvironment())
+  },.getReactiveSystem())
 }
 
 #' File Downloads
@@ -329,7 +329,7 @@ reactiveTimer <- function(intervalMs=1000) {
       })
   })
   return(function() {
-    ctx <- .getReactiveEnvironment()$currentContext()
+    ctx <- .getReactiveSystem()$currentContext()
     if (!dependencies$containsKey(ctx$id)) {
       dependencies$set(ctx$id, ctx)
       ctx$onInvalidate(function() {
@@ -348,7 +348,7 @@ reactiveTimer <- function(intervalMs=1000) {
 #'   current reactive context.
 #' @export
 invalidateLater <- function(millis) {
-  ctx <- .getReactiveEnvironment()$currentContext()
+  ctx <- .getReactiveSystem()$currentContext()
   timerCallbacks$schedule(millis, function() {
     ctx$invalidate()
   })
