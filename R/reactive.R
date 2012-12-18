@@ -1,9 +1,9 @@
 ReactiveSystem <- setRefClass(
   'ReactiveSystem',
   fields = c('.currentContext','.nextId', '.pendingInvalidate','.envir',
-             'setup','input','output'),
+             '.setupFun','input','output'),
   methods = list(
-    initialize = function(setup=NULL) {
+    initialize = function(setupFun=NULL) {
       .currentContext <<- NULL
       .nextId <<- 0L
       .pendingInvalidate <<- Map$new()
@@ -11,10 +11,9 @@ ReactiveSystem <- setRefClass(
       fixEnvironment()
 
       if (!is.null(setup) && is.function(setup)){
-        setup <<- setup
-        input <<- .self$NewValues()
+        input <<- .self$NewReactiveValues()
         output <<- Map$new()
-        local({ setup(input=input,output=output) })
+        setup(setupFun)
       }
     },
     currentContext = function() {
@@ -81,6 +80,13 @@ ReactiveSystem <- setRefClass(
     },
     NewReactiveFunction = function(func){
       ReactiveFunction$new(func,.re=.self)
+    },
+    setup = function(setupFun){
+      .setupFun <<- setupFun
+      func.env <- environment(.setupFun)
+      environment(.setupFun) <<- getEnvironment()
+      parent.env(environment(.setupFun)) <<- func.env
+      local({ setup(input=input,output=output) })
     }
   )
 )
