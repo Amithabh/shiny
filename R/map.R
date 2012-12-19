@@ -52,7 +52,6 @@ Map <- setRefClass(
       return(NULL)
     },
     containsKey = function(key) {
-      cat('containsKey(',key,')\n')
       exists(key, where=.env, inherits=FALSE)
     },
     keys = function() {

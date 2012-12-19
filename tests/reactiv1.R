@@ -1,4 +1,4 @@
-library(shiny)
+#library(shiny)
 
 reactive <- ReactiveSystem$new()
 reactive$setupWith(
@@ -18,4 +18,4 @@ reactive$setupWith(
 reactive$input$n <- 3
 reactive$output$ntext()
 reactive$input$n <- 4
-reactive$flush()
+#reactive$flush()
