@@ -26,13 +26,22 @@ Map <- setRefClass(
     },
     set = function(key, value) {
       assign(key, value, pos=.env, inherits=FALSE)
-      return(value)
+      invisible(value)
     },
     mset = function(...) {
       args <- list(...)
       for (key in names(args))
         set(key, args[[key]])
-      return()
+      invisible(args)
+    },
+    mget = function() {
+      lstNames <- keys()
+      lst <- lapply(lstNames,
+          function(name) {
+            .self$get(name)
+      })
+      names(lst) <- lstNames
+      lst
     },
     remove = function(key) {
       if (.self$containsKey(key)) {
@@ -43,13 +52,14 @@ Map <- setRefClass(
       return(NULL)
     },
     containsKey = function(key) {
+      cat('containsKey(',key,')\n')
       exists(key, where=.env, inherits=FALSE)
     },
     keys = function() {
       ls(envir=.env, all.names=TRUE)
     },
     values = function() {
-      mget(.self$keys(), envir=.env, inherits=FALSE)
+      base::mget(.self$keys(), envir=.env, inherits=FALSE)
     },
     clear = function() {
       .env <<- new.env(parent=emptyenv())
@@ -71,10 +81,40 @@ Map <- setRefClass(
 }
 
 as.list.Map <- function(map) {
-  sapply(map$keys(),
-         map$get,
-         simplify=FALSE)
+  map$mget()
 }
+
 length.Map <- function(map) {
   map$size()
 }
+
+S3Map <- function(map){
+  val <- list(impl=map)
+  class(val) <- 'S3map'
+  val
+}
+
+`$.S3map` <- function(x,name){
+  x[['impl']]$get(name)
+}
+
+`$<-.S3map` <- function(x,name,value){
+  x[['impl']]$set(name,value)
+  x
+}
+
+`<-.S3map` <- function(x,value){
+   if(!is('list',value)) stop("Value not a list!")
+   invisible(x[['impl']]$mset(value))
+   x
+}
+
+names.S3map <- function(x) {
+  x[['impl']]$keys()
+}
+
+as.list.S3map <- function(map) {
+  map[['impl']]$mget()
+}
+
+print.S3map <- function(x,...) print(as.list(x),...)

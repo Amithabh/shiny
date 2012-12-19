@@ -170,7 +170,7 @@ reactiveTable <- function(func, ...) {
                                           '"',
                                           sep=''), ...)),
       collapse="\n"))
-  },.getReactiveSystem())
+  })
 }
 
 #' Printable Output
@@ -192,7 +192,7 @@ reactiveTable <- function(func, ...) {
 reactivePrint <- function(func) {
   reactive(function() {
     return(paste(capture.output(print(func())), collapse="\n"))
-  },.getReactiveSystem())
+  })
 }
 
 #' Text Output
@@ -215,7 +215,7 @@ reactivePrint <- function(func) {
 reactiveText <- function(func) {
   reactive(function() {
     return(paste(capture.output(cat(func())), collapse="\n"))
-  },.getReactiveSystem())
+  })
 }
 
 #' UI Output
@@ -247,7 +247,7 @@ reactiveUI <- function(func) {
       return(NULL)
     # Wrap result in tagList in case it is an ordinary list
     return(as.character(tagList(result)))
-  },.getReactiveSystem())
+  })
 }
 
 #' File Downloads
