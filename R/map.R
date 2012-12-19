@@ -94,26 +94,45 @@ S3Map <- function(map){
 }
 
 `$.S3map` <- function(x,name){
+  class(x) <- 'list'
   x[['impl']]$get(name)
 }
 
 `$<-.S3map` <- function(x,name,value){
+  class(x) <- 'list'
   x[['impl']]$set(name,value)
+  class(x) <- 'S3map'
+  x
+}
+
+`[[.S3map` <- function(x,name){
+  class(x) <- 'list'
+  x[['impl']]$get(as.character(name))
+}
+
+`[[<-.S3map` <- function(x,name,value){
+  class(x) <- 'list'
+  x[['impl']]$set(as.character(name),value)
+  class(x) <- 'S3map'
   x
 }
 
 `<-.S3map` <- function(x,value){
-   if(!is('list',value)) stop("Value not a list!")
-   invisible(x[['impl']]$mset(value))
-   x
+  if(!is('list',value)) stop("Value not a list!")
+  class(x) <- 'list'
+  invisible(x[['impl']]$mset(value))
+  class(x) <- 'S3map'
+  x
 }
 
 names.S3map <- function(x) {
+  class(x) <- 'list'
   x[['impl']]$keys()
 }
 
-as.list.S3map <- function(map) {
-  map[['impl']]$mget()
+as.list.S3map <- function(x) {
+  class(x) <- 'list'
+  x[['impl']]$mget()
 }
 
 print.S3map <- function(x,...) print(as.list(x),...)

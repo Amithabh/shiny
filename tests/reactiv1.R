@@ -1,21 +1,24 @@
 #library(shiny)
 
-reactive <- ReactiveSystem$new()
-reactive$setupWith(
+rs <- ReactiveSystem$new()
+rs$setupWith(
   function(input,output){
     re <- reactive(function(){
-      cat("re()\n")
+      cat("re():input$n(",input$n,")\n")
       input$n
     })
 
     output$ntext <- reactive(function() {
-      cat("output$ntext():",input$n,"* 2 =",input$n + re(),'\n')
+      a <- input$n
+      b <- re()
+      d <- a + b
+      cat("output$ntext(): input$n(",a,")+re()(",b,")=",d,'\n')
       invisible()
     })
   }
 )
-#reactive$output$ntext$observeWith(function()cat('recalculating ntext\n')) 
-reactive$input$n <- 3
-reactive$output$ntext()
-reactive$input$n <- 4
-#reactive$flush()
+rs$input$n <- 3
+#rs$output$ntext$observeWith(function() cat("ntext calling\n"))
+rs$output$ntext$run()
+#rs$input$n <- 4
+#rs$flush()

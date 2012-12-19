@@ -1,12 +1,14 @@
 ReactiveSystem <- setRefClass(
   'ReactiveSystem',
-  fields = c('.currentContext','.nextId', '.pendingInvalidate','envir','input','output'),
+  fields = c('.currentContext','.nextId', '.pendingInvalidate','.objects',
+    '.envir','input','output'),
   methods = list(
     initialize = function() {
       .currentContext <<- NULL
       .nextId <<- 0L
       .pendingInvalidate <<- Map$new()
-      envir <<- NULL
+      .objects <<- Map$new()
+      .envir <<- NULL
       input <<- NULL
       output <<- NULL
     },
@@ -18,9 +20,11 @@ ReactiveSystem <- setRefClass(
       return(as.character(.nextId))
     },
     addPendingInvalidate = function(ctx) {
+      cat('add',ctx$id,'\n')
       .pendingInvalidate$set(ctx$id,ctx)
     },
     removePendingInvalidate = function(ctx){
+      cat('rem',ctx$id,'\n')
       .pendingInvalidate$remove(ctx$id)
     },
     isPendingInvalidate = function(ctx){
@@ -36,6 +40,7 @@ ReactiveSystem <- setRefClass(
       ctxKeys <- .pendingInvalidate$keys()
       while (length(ctxKeys) > 0) {
         ctx <- .pendingInvalidate$get(ctxKeys[1])
+        ctx$debug()
         ctx$executeCallbacks()
         .pendingInvalidate$remove(ctxKeys[1])
         ctxKeys <- .pendingInvalidate$keys()
@@ -45,33 +50,46 @@ ReactiveSystem <- setRefClass(
       Dependencies$new(.rs=.self)
     },
     NewContext = function(){
-      ctx <- Context$new(.rs=.self)
-      ctx$id <- nextId()
-      ctx
+      Context$new(.rs=.self)
     },
     NewReactiveValues = function(){
       S3ReactiveValues(ReactiveValues$new(.rs=.self))
     },
     NewReactiveFunction = function(func){
-      ReactiveFunction$new(func,.rs=.self)
+      x <- ReactiveFunction$new(func,.rs=.self)
+      .objects$set(nextId(),x)
+      x
     },
     setupWith = function(setupFun,envirClass=ReactiveEnvironment){
       if (is.null(input))
         input <<- .self$NewReactiveValues()
-      if (is.null(output))
-        output <<- S3Map(Map$new())
       if (is.object(envirClass))
         klass <- envirClass$className
       else if (is.character(envirClass))
         klass <- envirClass
-      envir <<- local({setRefClass(
+      .envir <<- local({setRefClass(
         paste(klass,gsub('-','',as.character(rnorm(1))),sep=''),
         contains=c(klass),
         methods=list(setup=setupFun)
       )$new(.rs=.self)})
-      envir$setup(input=input,output=output)
+      outputFuns <- S3Map(Map$new())
+      .envir$setup(input=input,output=outputFuns)
+      output <<- S3Map(Map$new())
+      for (key in names(outputFuns)){
+        output[[key]] <<- NewReactiveFunction(function() outputFuns[[key]]())
+        output[[key]]$isObserver()
+      }
+      invisible()
     },
-    show = function()cat('A Reactive System\n')
+    show = function()cat('A Reactive System\n'),
+    injectObserverFun = function(deps,observer){
+      for (i in .objects$keys()){
+        for (j in deps$keys()){
+          if (.objects$get(i)$.ctx$id == j)
+            .objects$get(i)$observeWith(observer)
+        }
+      }
+    }
   )
 )
 
@@ -106,7 +124,9 @@ Dependencies <- setRefClass(
       } else if (is.null(ctx) && !is.null(.rs$currentContext())){
         ctx <- .rs$currentContext()
       } else {
-        stop("No currentContext!\n")
+        # Allow access to ReactiveValues outside of the environment
+        #stop("No currentContext!\n")
+        return()
       }
       if (!.dependencies$containsKey(ctx$id)) {
         .dependencies$set(ctx$id, ctx)
@@ -138,11 +158,14 @@ Dependencies <- setRefClass(
       lapply(
         .dependencies$values(),
         function(ctx) {
-          ctx$executCallbacks()
+          ctx$executeCallbacks()
           NULL
         }
       )
       invisible()
+    },
+    contexts = function(){
+      .dependencies
     }
   )
 )
@@ -161,25 +184,36 @@ Context <- setRefClass(
   methods = list(
     initialize = function(...) {
       callSuper(...)
+      id <<- .rs$nextId()
+      cat('new ctx',id,'\n')
       .invalidatedHint <<- FALSE
       .dependants <<- .rs$NewDependencies()
       .dependencies <<- .rs$NewDependencies()
     },
     addDependant = function(){
-      .dependants$register(ctx)
-      ctx$addDependency(.self)
+      .dependants$register()
+      depid <- ''
+      if (!is.null(.rs$currentContext())){
+        .rs$currentContext()$addDependency(.self)
+        depid <- .rs$currentContext()$id
+      }
+      cat('addDependant:',depid,'->',id,'\n')
     },
     addDependency = function(ctx){
       .dependencies$register(ctx)
     },
     invalidateDependants = function(){
+      lhs <- paste(.dependants$contexts()$keys(),collapse=',')
+      cat('invalidateDependants[',lhs,']->',id,'\n')
       .dependants$invalidate()
     },
     run = function(func) {
       "Run the provided function under this context."
+       addDependant()
       .rs$runWith(.self, func)
     },
     runDependencies = function(){
+      cat('runDependencies',id,'\n')
       .dependencies$run()
     },
     invalidateHint = function() {
@@ -190,9 +224,8 @@ Context <- setRefClass(
       if (.invalidatedHint)
         return()
       .invalidatedHint <<- TRUE
-      lapply(.hintCallbacks, function(func) {
-        func()
-      })
+      .execute(.hintCallbacks)
+      .dependants$invalidateHint()
     },
     invalidate = function() {
       "Schedule this context for invalidation. It will not actually be
@@ -219,9 +252,13 @@ Context <- setRefClass(
       else
         .hintCallbacks <<- c(.hintCallbacks, func)
     },
-    executeCallbacks = function() {
+    clearInvalidatedHints = function(){
+      .hintCallbacks <<- list()
+      .invalidatedHint <<- TRUE
+    },
+    .execute = function(callbacks){
       "For internal use only."
-      lapply(.callbacks, function(func) {
+      lapply(callbacks, function(func) {
         withCallingHandlers({
           func()
         }, warning = function(e) {
@@ -230,6 +267,20 @@ Context <- setRefClass(
           # TODO: Callbacks in app
         })
       })
+    },
+    executeCallbacks = function() {
+      .execute(.callbacks)
+    },
+    executeHints = function() {
+      .execute(.hintCallbacks)
+    },
+    injectObserverFun = function(observerFun){
+      .rs$injectObserverFun(.dependencies$contexts(),observerFun)
+    },
+    debug = function(){
+      lhs <- paste(.dependants$contexts()$keys(),collapse=',')
+      rhs <- paste(.dependencies$contexts()$keys(),collapse=',')
+      cat('[',lhs,']->(',id,')->[',rhs,']\n')
     }
   )
 )
@@ -250,7 +301,7 @@ ReactiveValues <- setRefClass(
     },
     set = function(key, value) {
       if (exists(key, where=.values, inherits=FALSE)) {
-        if (identical(.values$key$val, value)) 
+        if (identical(.values[[key]]$val, value)) 
           return(invisible(.values$key$val))
       } else {
         assign(key,
@@ -345,51 +396,59 @@ ReactiveFunction <- setRefClass(
     .func = 'function',
     .value = 'ANY',
     .ctx = 'ANY',
-    .firstInvocation = 'logical'
+    .firstInvocation = 'logical',
+    .isObserver ='logical',
+    .observerFun = 'function'
   ),
   methods = list(
     initialize = function(func,...) {
       callSuper(...)
       .func <<- func
       .ctx <<- .rs$NewContext()
-      .ctx$onInvalidate(function() {
-        .self$getValue()
-      })
+      .ctx$onInvalidate(.self$getValue)
       .firstInvocation <<- TRUE
+      .isObserver <<- FALSE
     },
     getValue = function(...) {
 
       if (.firstInvocation){
         .firstInvocation <<- FALSE
-         .ctx$run(function() {
-           #.value <<- try(.func(), silent=FALSE)
-           .value <<- .func()
-         })
+        .ctx$run(function() {
+          #.value <<- try(.func(), silent=FALSE)
+          .value <<- .func()
+        })
+        if (.isObserver){
+          .ctx$injectObserverFun(.observerFun)
+          .ctx$clearInvalidatedHints()
+        }
         return(invisible(.value))
       }
+      cat('getValue id',.ctx$id,'\n')
 
       old.value <- .value
       .ctx$runDependencies()
       if (.ctx$isInvalidated()){
-          .ctx$validate()
-          .ctx <<- .rs$NewContext()
-          .ctx$onInvalidate(function() {
-            .self$getValue()
-          })
-         .ctx$run(function() {
-           .value <<- try(.func(), silent=FALSE)
-         })
+        .ctx$validate()
+        .ctx$.dependencies <<- .rs$NewDependencies()
+        .ctx$run(function() {
+          .value <<- try(.func(), silent=FALSE)
+        })
       }
-      if (!identical(old.value, .value))
-        .ctx$invalidateDependants()
 
       if (identical(class(.value), 'try-error'))
         stop(attr(.value, 'condition'))
+      if (!identical(old.value, .value))
+        .ctx$invalidateDependants()
 
       invisible(.value)
     },
+    run = function() getValue(),
     observeWith = function(func){
-      .ctx$onInvalidateHint(func)
+      .observerFun <<- func
+      .ctx$onInvalidateHint(.observerFun)
+    },
+    isObserver = function(){
+      .isObserver <<- TRUE
     }
   )
 )
