@@ -1,14 +1,15 @@
 ReactiveSystem <- setRefClass(
   'ReactiveSystem',
-  fields = c('.currentContext','.nextId', '.pendingInvalidate','.objects',
-    '.envir','input','output'),
+  fields = c('.currentContext','.nextId', '.pendingInvalidate',
+    '.objects','.envirClass', 'envir','input','output'),
   methods = list(
     initialize = function() {
       .currentContext <<- NULL
       .nextId <<- 100L
       .pendingInvalidate <<- Map$new()
       .objects <<- Map$new()
-      .envir <<- NULL
+      .envirClass <<- NULL
+      envir <<- NULL
       input <<- NULL
       output <<- NULL
     },
@@ -60,7 +61,7 @@ ReactiveSystem <- setRefClass(
     NewReactiveValues = function(){
       S3ReactiveValues(ReactiveValues$new(.rs=.self))
     },
-    NewReactiveFunction = function(func=function(){},setupFunc=function(input=NULL,name=NULL){}){
+    NewReactiveFunction = function(func=function(){},setupFunc=function(envir=NULL,input=NULL,name=NULL){}){
       x <- ReactiveFunction$new(func=func,setupFunc=setupFunc,.rs=.self)
       .objects$set(nextId(),x)
       x
@@ -70,32 +71,38 @@ ReactiveSystem <- setRefClass(
       .objects$set(nextId(),x)
       x
     },
-    setupWith = function(setupFun,envirClass=ReactiveEnvironment){
-      if (is.null(input))
-        input <<- .self$NewReactiveValues()
+    initializeEnvironment = function(class=ReactiveEnvironment){
+      if (is.object(class))
+        superClass <- class$className
+      else if (is.character(class))
+        superClass <- class
 
-      if (is.object(envirClass))
-        superKlass <- envirClass$className
-      else if (is.character(envirClass))
-        superKlass <- envirClass
-
-      klassName <- paste('ReactiveClass__',digest(setupFun,algo='sha1'),sep='')
-      rKlassName <- paste('.__C__',klassName,sep='')
-      if (exists(rKlassName,globalenv())){
-        refGen<-getRefClass(klassName)
+      className <- paste('ReactiveClass__',digest(.self,algo='sha1'),sep='')
+      RClassName <- paste('.__C__',className,sep='')
+      if (exists(RClassName,globalenv())){
+        .envirClass <<-getRefClass(className)
       } else {
-        refGen <- setRefClass(
-          klassName,
-          contains=c(superKlass),
-          methods = list(setup=setupFun),
+        .envirClass <<- setRefClass(
+          className,
+          contains=c(superClass),
           where=globalenv()
         )
       }
+      envir <<- .envirClass$new(.rs=.self)
+    },
+    setupEnvironmentWith = function(setupFun,class=ReactiveEnvironment){
 
-      .envir <<- refGen$new(.rs=.self)
+      if (is.null(envir))
+        initializeEnvironment(class=class)
+
+
+      if (is.null(input))
+        input <<- .self$NewReactiveValues()
+
+      .envirClass$methods(setup=setupFun)
 
       outputFuns <- S3Map(Map$new())
-      .envir$setup(input=input,output=outputFuns)
+      envir$setup(input=input,output=outputFuns)
       output <<- S3Map(Map$new())
       for (key in names(outputFuns)){
         f <- outputFuns[[key]]
@@ -106,7 +113,7 @@ ReactiveSystem <- setRefClass(
           if('setup' %in% getRefClass(class(obj))$methods())
             obj$setup()
         }
-        output[[key]] <<- .self$NewReactiveObserver(function() outputFuns[[key]]())
+        output[[key]] <<- f
       }
       invisible()
     },
@@ -447,7 +454,7 @@ ReactiveFunction <- setRefClass(
     .observerFun = 'function'
   ),
   methods = list(
-    initialize = function(func=function(){},setupFunc=function(input=NULL,name=NULL){},...) {
+    initialize = function(func=function(){},setupFunc=function(envir=NULL,input=NULL,name=NULL){},...) {
       callSuper(...)
       .func <<- func
       .setupFunc <<- setupFunc
@@ -467,9 +474,8 @@ ReactiveFunction <- setRefClass(
       .setupFunc <<- func
     },
     setup = function(){
-      e <- try(.setupFunc(.rs$input,.name),silent=FALSE)
+      e <- try(.setupFunc(envir=.rs$envir,input=.rs$input,name=.name),silent=FALSE)
       if (!is.environment(e)) return(invisible())
-      assign('input',.rs$input,e)
       old.env <- environment(.func)
       environment(.func) <<- e
       parent.env(environment(.func)) <<- old.env

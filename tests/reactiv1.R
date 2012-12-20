@@ -1,7 +1,7 @@
 library(shiny)
 
 rs <- ReactiveSystem$new()
-rs$setupWith(
+rs$setupEnvironmentWith(
   function(input,output){
     re <- reactive(function(){
       cat("re():input$n(",input$n,")\n")
@@ -12,13 +12,15 @@ rs$setupWith(
       a <- re()
       b <- a*2
       cat("output$ntext(): re()(",a,")*2=",b,'\n')
-      invisible()
+      'foo'
     })
   }
 )
 rs$input$n <- 1 
-rs$output$ntext$observeWith(function() cat("ntext calling\n"))
-rs$output$ntext$run()
+o <- rs$NewReactiveObserver(rs$output$ntext)
+o$observeWith(function() cat("ntext calling\n"))
+o$invalidate()
+rs$flush()
 for (i in 2:10){
   rs$input$n <- i
   rs$flush()

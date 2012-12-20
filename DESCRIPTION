@@ -11,7 +11,8 @@ Description: Shiny makes it incredibly easy to build interactive web
     beautiful, responsive, and powerful applications with minimal effort.
 License: GPL-3
 Depends:
-    R (>= 2.14.1)
+    R (>= 2.14.1),
+    caTools
 Imports:
     stats,
     tools,
@@ -19,7 +20,6 @@ Imports:
     datasets,
     methods,
     websockets (>= 1.1.6),
-    caTools,
     RJSONIO,
     xtable,
     digest
@@ -37,6 +37,7 @@ Collate:
     'reactive.R'
     'fileupload.R'
     'shiny.R'
+    'shinyreactive.R'
     'shinywrappers.R'
     'shinyui.R'
     'slider.R'

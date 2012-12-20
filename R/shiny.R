@@ -19,8 +19,7 @@ ShinyApp <- setRefClass(
     .invalidatedOutputValues = 'Map',
     .invalidatedOutputErrors = 'Map',
     .fileUploadContext = 'FileUploadContext',
-    .re = 'ANY',
-    session = 'ANY',
+    reactive = 'ANY',
     token = 'character',  # Used to identify this instance in URLs
     plots = 'Map',
     downloads = 'Map',
@@ -33,9 +32,9 @@ ShinyApp <- setRefClass(
       .invalidatedOutputErrors <<- Map$new()
       # TODO: Put file upload context in user/app-specific dir if possible
       .fileUploadContext <<- FileUploadContext$new()
-      .re <<- .getReactiveSystem()
-      session <<- .re$NewReactiveValues()
-      
+      reactive <<- ReactiveSystem$new()
+      reactive$initializeEnvironment('ShinyReactiveEnvironment')
+
       token <<- createUniqueId(16)
       
       allowDataUriScheme <<- TRUE
@@ -51,14 +50,7 @@ ShinyApp <- setRefClass(
       force(name)
       
       if (is.function(func)) {
-        if (length(formals(func)) != 0) {
-          orig <- func
-          func <- function() {
-            orig(name=name, shinyapp=.self)
-          }
-        }
-
-        obs <- Observer$new(function() {
+        obs <- reactive$NewReactiveObserver(function() {
           
           value <- try(func(), silent=FALSE)
           
@@ -74,11 +66,12 @@ ShinyApp <- setRefClass(
           }
           else
             .invalidatedOutputValues$set(name, value)
-        },.getReactiveSystem())
+        })
         
-        obs$onInvalidateHint(function() {
+        obs$observeWith(function() {
           showProgress(name)
         })
+        obs$invalidate()
       }
       else {
         stop(paste("Unexpected", class(func), "output for", name))
@@ -168,7 +161,7 @@ ShinyApp <- setRefClass(
     },
     `@uploadEnd` = function(jobId, inputId) {
       fileData <- .fileUploadContext$getUploadOperation(jobId)$finish()
-      session$set(inputId, fileData)
+      reactive$input[[inputId]] <<- fileData
       invisible()
     },
     # Provides a mechanism for handling direct HTTP requests that are posted
@@ -220,7 +213,7 @@ ShinyApp <- setRefClass(
           return(httpResponse(404, 'text/html', '<h1>Not Found</h1>'))
         
         filename <- ifelse(is.function(download$filename),
-                           .getReactiveSystem()$NewContext()$run(download$filename),
+                           reactive$NewContext()$run(download$filename),
                            download$filename)
 
         # If the URL does not contain the filename, and the desired filename
@@ -237,7 +230,7 @@ ShinyApp <- setRefClass(
         
         tmpdata <- tempfile()
         on.exit(unlink(tmpdata))
-        result <- try(.getReactiveSystem()$NewContext()$run(function() { download$func(tmpdata) }))
+        result <- try(reactive$NewContext()$run(function() { download$func(tmpdata) }))
         if (is(result, 'try-error')) {
           return(httpResponse(500, 'text/plain', 
                               attr(result, 'condition')$message))
@@ -745,19 +738,23 @@ startApp <- function(port=8101L) {
         
         shinyapp$allowDataUriScheme <- msg$data[['__allowDataUriScheme']]
         msg$data[['__allowDataUriScheme']] <- NULL
-        shinyapp$session$mset(msg$data)
-        flushReact()
-        local({
-          serverFunc(input=.createValuesReader(shinyapp$session),
-                     output=.createOutputWriter(shinyapp))
+        shinyapp$reactive$envir$shinyapp <- shinyapp
+        shinyapp$reactive$setupEnvironmentWith(serverFunc)
+        lapply(names(msg$data),function(n){
+          shinyapp$reactive$input[[n]] <- msg$data[[n]]
+        })
+        lapply(names(shinyapp$reactive$output),function(n){
+          shinyapp$defineOutput(n,shinyapp$reactive$output[[n]])
         })
       },
       update = {
-        shinyapp$session$mset(msg$data)
+        lapply(names(msg$data),function(n){
+          shinyapp$reactive$input[[n]] <- msg$data[[n]]
+        })
       },
       shinyapp$dispatch(msg)
     )
-    flushReact()
+    shinyapp$reactive$flush()
     shinyapp$flushOutput()
   }, ws_env)
   
