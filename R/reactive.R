@@ -79,20 +79,20 @@ ReactiveSystem <- setRefClass(
       else if (is.character(envirClass))
         superKlass <- envirClass
 
-      klassName <- paste('ReactiveClass__',gsub('-\\.','',as.character(rnorm(1))),sep='')
-      refGen <- setRefClass(
-        klassName,
-        contains=c(superKlass),
-        methods = list(setup=setupFun),
-        where=globalenv()
-      )
+      klassName <- paste('ReactiveClass__',digest(setupFun,algo='sha1'),sep='')
+      rKlassName <- paste('.__C__',klassName,sep='')
+      if (exists(rKlassName,globalenv())){
+        refGen<-getRefClass(klassName)
+      } else {
+        refGen <- setRefClass(
+          klassName,
+          contains=c(superKlass),
+          methods = list(setup=setupFun),
+          where=globalenv()
+        )
+      }
 
       .envir <<- refGen$new(.rs=.self)
-
-      try(
-        rm(list=ls(all.names=TRUE,globalenv(),pattern=klassName),pos=globalenv()),
-        silent=TRUE
-      )
 
       outputFuns <- S3Map(Map$new())
       .envir$setup(input=input,output=outputFuns)
