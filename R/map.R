@@ -79,12 +79,12 @@ Map <- setRefClass(
   return(map)
 }
 
-as.list.Map <- function(map) {
-  map$mget()
+as.list.Map <- function(x,...) {
+  x$mget()
 }
 
-length.Map <- function(map) {
-  map$size()
+length.Map <- function(x) {
+  x$size()
 }
 
 S3Map <- function(map){
@@ -130,7 +130,7 @@ names.S3map <- function(x) {
   x[['impl']]$keys()
 }
 
-as.list.S3map <- function(x) {
+as.list.S3map <- function(x,...) {
   class(x) <- 'list'
   x[['impl']]$mget()
 }

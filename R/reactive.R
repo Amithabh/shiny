@@ -5,7 +5,7 @@ ReactiveSystem <- setRefClass(
   methods = list(
     initialize = function() {
       .currentContext <<- NULL
-      .nextId <<- 0L
+      .nextId <<- 100L
       .pendingInvalidate <<- Map$new()
       .objects <<- Map$new()
       .envir <<- NULL
@@ -16,15 +16,15 @@ ReactiveSystem <- setRefClass(
       .currentContext
     },
     nextId = function() {
-      .nextId <<- .nextId + 1L
+      .nextId <<- .nextId - 1L
       return(as.character(.nextId))
     },
     addPendingInvalidate = function(ctx) {
-      cat('add',ctx$id,'\n')
+      #cat('add',ctx$id,'\n')
       .pendingInvalidate$set(ctx$id,ctx)
     },
     removePendingInvalidate = function(ctx){
-      cat('rem',ctx$id,'\n')
+      #cat('rem',ctx$id,'\n')
       .pendingInvalidate$remove(ctx$id)
     },
     isPendingInvalidate = function(ctx){
@@ -37,6 +37,11 @@ ReactiveSystem <- setRefClass(
       func()
     },
     flush = function() {
+      walkObjects(function(o){ 
+        if (class(o) == 'ReactiveFunction'){
+          o$.ctx$visited(FALSE)
+        }
+      })
       ctxKeys <- .pendingInvalidate$keys()
       while (length(ctxKeys) > 0) {
         ctx <- .pendingInvalidate$get(ctxKeys[1])
@@ -55,40 +60,59 @@ ReactiveSystem <- setRefClass(
     NewReactiveValues = function(){
       S3ReactiveValues(ReactiveValues$new(.rs=.self))
     },
-    NewReactiveFunction = function(func){
-      x <- ReactiveFunction$new(func,.rs=.self)
+    NewReactiveFunction = function(func=function(){},setupFunc=function(input=NULL,name=NULL){}){
+      x <- ReactiveFunction$new(func=func,setupFunc=setupFunc,.rs=.self)
+      .objects$set(nextId(),x)
+      x
+    },
+    NewReactiveObserver = function(func){
+      x <- ReactiveObserver$new(func,.rs=.self)
       .objects$set(nextId(),x)
       x
     },
     setupWith = function(setupFun,envirClass=ReactiveEnvironment){
       if (is.null(input))
         input <<- .self$NewReactiveValues()
+
       if (is.object(envirClass))
-        klass <- envirClass$className
+        superKlass <- envirClass$className
       else if (is.character(envirClass))
-        klass <- envirClass
-      .envir <<- local({setRefClass(
-        paste(klass,gsub('-','',as.character(rnorm(1))),sep=''),
-        contains=c(klass),
-        methods=list(setup=setupFun)
-      )$new(.rs=.self)})
+        superKlass <- envirClass
+
+      klassName <- paste('ReactiveClass__',gsub('-\\.','',as.character(rnorm(1))),sep='')
+      refGen <- setRefClass(
+        klassName,
+        contains=c(superKlass),
+        methods = list(setup=setupFun),
+        where=globalenv()
+      )
+
+      .envir <<- refGen$new(.rs=.self)
+
+      try(
+        rm(list=ls(all.names=TRUE,globalenv(),pattern=klassName),pos=globalenv()),
+        silent=TRUE
+      )
+
       outputFuns <- S3Map(Map$new())
       .envir$setup(input=input,output=outputFuns)
       output <<- S3Map(Map$new())
       for (key in names(outputFuns)){
-        output[[key]] <<- NewReactiveFunction(function() outputFuns[[key]]())
-        output[[key]]$isObserver()
+        f <- outputFuns[[key]]
+        if (class(f)=='refMethodDef' && exists('.self',environment(f),inherits=FALSE)){
+          obj <- get('.self',environment(f),inherits=FALSE)
+          if('setName' %in% getRefClass(class(obj))$methods())
+            obj$setName(key)
+          if('setup' %in% getRefClass(class(obj))$methods())
+            obj$setup()
+        }
+        output[[key]] <<- .self$NewReactiveObserver(function() outputFuns[[key]]())
       }
       invisible()
     },
     show = function()cat('A Reactive System\n'),
-    injectObserverFun = function(deps,observer){
-      for (i in .objects$keys()){
-        for (j in deps$keys()){
-          if (.objects$get(i)$.ctx$id == j)
-            .objects$get(i)$observeWith(observer)
-        }
-      }
+    walkObjects = function(fun){
+      invisible(lapply(.objects$mget(),fun))
     }
   )
 )
@@ -102,8 +126,8 @@ ReactiveEnvironment <- setRefClass(
   'ReactiveEnvironment',
   contains=c('ReactiveObject'),
   methods = list(
-    reactive = function(x){
-      .rs$NewReactiveFunction(x)$getValue
+    reactive = function(x,...){
+      .rs$NewReactiveFunction(func=x)$getValue
     }
   )
 )
@@ -130,9 +154,6 @@ Dependencies <- setRefClass(
       }
       if (!.dependencies$containsKey(ctx$id)) {
         .dependencies$set(ctx$id, ctx)
-        ctx$onInvalidate(function() {
-          .dependencies$remove(ctx$id)
-        })
       }
     },
     invalidate = function() {
@@ -179,16 +200,18 @@ Context <- setRefClass(
     .callbacks = 'list',
     .hintCallbacks = 'list',
     .dependants = 'ANY',
-    .dependencies = 'ANY'
+    .dependencies = 'ANY',
+    .visited = 'logical'
   ),
   methods = list(
     initialize = function(...) {
       callSuper(...)
       id <<- .rs$nextId()
-      cat('new ctx',id,'\n')
+      #cat('new ctx',id,'\n')
       .invalidatedHint <<- FALSE
       .dependants <<- .rs$NewDependencies()
       .dependencies <<- .rs$NewDependencies()
+      .visited <<- FALSE
     },
     addDependant = function(){
       .dependants$register()
@@ -197,23 +220,23 @@ Context <- setRefClass(
         .rs$currentContext()$addDependency(.self)
         depid <- .rs$currentContext()$id
       }
-      cat('addDependant:',depid,'->',id,'\n')
+      #cat('addDependant:',depid,'->',id,'\n')
     },
     addDependency = function(ctx){
       .dependencies$register(ctx)
     },
     invalidateDependants = function(){
       lhs <- paste(.dependants$contexts()$keys(),collapse=',')
-      cat('invalidateDependants[',lhs,']->',id,'\n')
+      #cat('invalidateDependants[',lhs,']->',id,'\n')
       .dependants$invalidate()
     },
     run = function(func) {
       "Run the provided function under this context."
-       addDependant()
       .rs$runWith(.self, func)
     },
     runDependencies = function(){
-      cat('runDependencies',id,'\n')
+      rhs <- paste(.dependencies$contexts()$keys(),collapse=',')
+      #cat('runDependencies',id,'->[',rhs,']\n')
       .dependencies$run()
     },
     invalidateHint = function() {
@@ -247,10 +270,7 @@ Context <- setRefClass(
       NULL
     },
     onInvalidateHint = function(func) {
-      if (.invalidatedHint)
-        func()
-      else
-        .hintCallbacks <<- c(.hintCallbacks, func)
+      .hintCallbacks <<- c(.hintCallbacks, func)
     },
     clearInvalidatedHints = function(){
       .hintCallbacks <<- list()
@@ -274,13 +294,17 @@ Context <- setRefClass(
     executeHints = function() {
       .execute(.hintCallbacks)
     },
-    injectObserverFun = function(observerFun){
-      .rs$injectObserverFun(.dependencies$contexts(),observerFun)
+    visited = function(val=TRUE){
+      if (missing(val))
+        return(.visited)
+      .visited <<- val
+      if (!.visited)
+        .invalidatedHint <<- FALSE
     },
     debug = function(){
       lhs <- paste(.dependants$contexts()$keys(),collapse=',')
       rhs <- paste(.dependencies$contexts()$keys(),collapse=',')
-      cat('[',lhs,']->(',id,')->[',rhs,']\n')
+      #cat('[',lhs,']->(',id,')->[',rhs,']\n')
     }
   )
 )
@@ -303,14 +327,14 @@ ReactiveValues <- setRefClass(
       if (exists(key, where=.values, inherits=FALSE)) {
         if (identical(.values[[key]]$val, value)) 
           return(invisible(.values$key$val))
+        .values[[key]]$val <<- value
+        .values[[key]]$dependants$invalidate()
+        .values[[key]]$dependants <<- .rs$NewDependencies()
       } else {
         assign(key,
           list(val=value,dependants=.rs$NewDependencies()), 
           pos=.values, inherits=FALSE)
       }
-
-      .values[[key]]$val <<- value
-      .values[[key]]$dependants$invalidate()
 
       invisible(value)
     },
@@ -344,24 +368,44 @@ S3ReactiveValues <- function(re){
 }
 
 `$.reactiveValues` <- function(x,name){
+  class(x) <- 'list'
   x[['impl']]$get(name)
 }
 
 `$<-.reactiveValues` <- function(x,name,value){
+  class(x) <- 'list'
   x[['impl']]$set(name,value)
+  class(x) <- 'reactiveValues'
+  x
+}
+
+`[[.reactiveValues` <- function(x,name){
+  class(x) <- 'list'
+  x[['impl']]$get(as.character(name))
+}
+
+`[[<-.reactiveValues` <- function(x,name,value){
+  class(x) <- 'list'
+  x[['impl']]$set(as.character(name),value)
+  class(x) <- 'reactiveValues'
   x
 }
 
 `<-.reactiveValues` <- function(x,value){
-   if(!is('list',value)) stop("Value not a list!")
-   invisible(x$mset(value))
+  if(!is('list',value)) stop("Value not a list!")
+  class(x) <- 'list'
+  invisible(x[['impl']]$mset(value))
+  class(x) <- 'reactiveValues'
+  x
 }
 
 as.list.reactiveValues <- function(x, ...) {
+  class(x) <- 'list'
   x[['impl']]$mget()
 }
 
 names.reactiveValues <- function(x) {
+  class(x) <- 'list'
   x[['impl']]$names()
 }
 
@@ -393,7 +437,9 @@ ReactiveFunction <- setRefClass(
   'ReactiveFunction',
   contains = c('ReactiveObject'),
   fields = list(
+    .name = 'character',
     .func = 'function',
+    .setupFunc = 'function',
     .value = 'ANY',
     .ctx = 'ANY',
     .firstInvocation = 'logical',
@@ -401,29 +447,69 @@ ReactiveFunction <- setRefClass(
     .observerFun = 'function'
   ),
   methods = list(
-    initialize = function(func,...) {
+    initialize = function(func=function(){},setupFunc=function(input=NULL,name=NULL){},...) {
       callSuper(...)
       .func <<- func
+      .setupFunc <<- setupFunc
       .ctx <<- .rs$NewContext()
       .ctx$onInvalidate(.self$getValue)
       .firstInvocation <<- TRUE
       .isObserver <<- FALSE
     },
+    setName = function(n){
+      .name <<- n
+    },
+    getName = function() .name,
+    setReactiveFunction = function(func){
+      .func <<- func
+    },
+    setSetupFunction = function(func){
+      .setupFunc <<- func
+    },
+    setup = function(){
+      e <- try(.setupFunc(.rs$input,.name),silent=FALSE)
+      if (!is.environment(e)) return(invisible())
+      assign('input',.rs$input,e)
+      old.env <- environment(.func)
+      environment(.func) <<- e
+      parent.env(environment(.func)) <<- old.env
+      invisible()
+    },
+    invalidate = function(){
+      if (isObserver()){
+        lapply(.ctx$.dependencies$contexts(),function(ctx){
+            ctx$invalidate()
+        })
+      }
+      .ctx$invalidate()
+    },
+    isObserver = function(val=FALSE){
+      if (missing(val)) return(.isObserver)
+      .isObserver <<- val
+    },
     getValue = function(...) {
+      .ctx$addDependant()
 
       if (.firstInvocation){
         .firstInvocation <<- FALSE
+        .ctx$invalidateHint()
         .ctx$run(function() {
           #.value <<- try(.func(), silent=FALSE)
           .value <<- .func()
         })
-        if (.isObserver){
-          .ctx$injectObserverFun(.observerFun)
+        if (isObserver()){
+          lapply(.ctx$.dependencies$contexts(),function(ctx){
+              ctx$onInvalidateHint(.observerFun)
+          })
           .ctx$clearInvalidatedHints()
         }
         return(invisible(.value))
       }
-      cat('getValue id',.ctx$id,'\n')
+      if (.ctx$visited()){
+        #cat('getValue id',.ctx$id,'VISITED\n')
+        return(invisible(.value))
+      }
+      #cat('getValue id',.ctx$id,'\n')
 
       old.value <- .value
       .ctx$runDependencies()
@@ -433,6 +519,7 @@ ReactiveFunction <- setRefClass(
         .ctx$run(function() {
           .value <<- try(.func(), silent=FALSE)
         })
+        .ctx$visited(TRUE)
       }
 
       if (identical(class(.value), 'try-error'))
@@ -442,13 +529,34 @@ ReactiveFunction <- setRefClass(
 
       invisible(.value)
     },
-    run = function() getValue(),
     observeWith = function(func){
       .observerFun <<- func
       .ctx$onInvalidateHint(.observerFun)
     },
     isObserver = function(){
       .isObserver <<- TRUE
+    }
+  )
+)
+
+ReactiveObserver <- setRefClass(
+  'ReactiveObserver',
+  contains = c('ReactiveObject'),
+  fields = c('.rf'),
+  methods = list(
+    initialize = function(fun,...){
+      callSuper(...)
+      .rf <<- .rs$NewReactiveFunction(fun)
+      .rf$isObserver(TRUE)
+    },
+    observeWith = function(fun){
+      .rf$observeWith(fun)
+    },
+    run = function(){
+      .rf$getValue()
+    },
+    invalidate = function(){
+      .rf$invalidate()
     }
   )
 )
