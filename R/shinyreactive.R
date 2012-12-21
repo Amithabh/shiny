@@ -40,6 +40,7 @@ ShinyReactiveEnvironment <- setRefClass(
       .envir$reactiveText <<- .self$reactiveText
       .envir$reactiveUI <<- .self$reactiveUI
       .envir$downloadHandler <<- .self$downloadHandler
+      .envir$invalidateLater <<- .self$invalidateLater
     },
     reactivePlot = function(plotFun, width='auto', height='auto', ...) {
       plotArgs <- list(...)
@@ -180,6 +181,14 @@ ShinyReactiveEnvironment <- setRefClass(
                          URLencode(name, TRUE)))
         }
       )$getValue
+    },
+    invalidateLater = function(millis) {
+      ctx <- .rs$currentContext()
+      shinyapp$timerCallbacks$schedule(millis, function() {
+        cat('invalidiating again\n')
+        ctx$invalidate()
+        .rs$flush()
+      })
     }
   )
 )

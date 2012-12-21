@@ -1,7 +1,7 @@
 ReactiveSystem <- setRefClass(
   'ReactiveSystem',
   fields = c('.currentContext','.nextId', '.pendingInvalidate',
-    '.objects','.envirClass', 'envir','input','output'),
+    '.objects','.inFlush','.envirClass', 'envir','input','output'),
   methods = list(
     initialize = function() {
       .currentContext <<- NULL
@@ -9,6 +9,7 @@ ReactiveSystem <- setRefClass(
       .pendingInvalidate <<- Map$new()
       .objects <<- Map$new()
       .envirClass <<- NULL
+      .inFlush <<- FALSE
       envir <<- NULL
       input <<- NULL
       output <<- NULL
@@ -38,6 +39,8 @@ ReactiveSystem <- setRefClass(
       func()
     },
     flush = function() {
+      if (.inFlush) return()
+      .inFlush <<- TRUE
       walkObjects(function(o){ 
         if (class(o) == 'ReactiveFunction'){
           o$.ctx$visited(FALSE)
@@ -51,6 +54,8 @@ ReactiveSystem <- setRefClass(
         .pendingInvalidate$remove(ctxKeys[1])
         ctxKeys <- .pendingInvalidate$keys()
       }
+      .inFlush <<- FALSE
+      invisible()
     },
     NewDependencies = function(){
       Dependencies$new(.rs=.self)
