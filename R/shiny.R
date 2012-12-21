@@ -2,10 +2,10 @@
 #' @import websockets caTools RJSONIO xtable digest
 NULL
 
-suppressPackageStartupMessages({
-  library(websockets)
-  library(RJSONIO)
-})
+#suppressPackageStartupMessages({
+#  library(websockets)
+#  library(RJSONIO)
+#})
 
 createUniqueId <- function(bytes) {
   # TODO: Use a method that isn't affected by the R seed
@@ -213,7 +213,7 @@ ShinyApp <- setRefClass(
           return(httpResponse(404, 'text/html', '<h1>Not Found</h1>'))
         
         filename <- ifelse(is.function(download$filename),
-                           reactive$NewContext()$run(download$filename),
+                           download$filename(),
                            download$filename)
 
         # If the URL does not contain the filename, and the desired filename
@@ -230,7 +230,7 @@ ShinyApp <- setRefClass(
         
         tmpdata <- tempfile()
         on.exit(unlink(tmpdata))
-        result <- try(reactive$NewContext()$run(function() { download$func(tmpdata) }))
+        result <- try(download$func(tmpdata))
         if (is(result, 'try-error')) {
           return(httpResponse(500, 'text/plain', 
                               attr(result, 'condition')$message))
@@ -770,7 +770,7 @@ startApp <- function(port=8101L) {
 # @param ws_env The return value from \code{\link{startApp}}.
 serviceApp <- function(ws_env) {
   if (timerCallbacks$executeElapsed()) {
-    flushReact()
+    shinyapp$reactive$flush()
      lapply(apps$values(), function(shinyapp) {
        shinyapp$flushOutput()
        NULL

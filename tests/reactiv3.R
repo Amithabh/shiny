@@ -5,6 +5,10 @@ MyReactiveEnv <- setRefClass(
   contains = 'ReactiveEnvironment',
   field = list(id='integer'),
   methods = list(
+    registerReactives = function(){
+      callSuper()
+      .envir$reactivePuppet <- .self$reactivePuppet
+    },
     nextId = function() { id <<- if(length(id)) id + 1L else 1L },
     reactivePuppet = function(fun){
       .rs$NewReactiveFunction(

@@ -1,8 +1,3 @@
-suppressPackageStartupMessages({
-  library(caTools)
-  library(xtable)
-})
-
 #' Plot Output
 #' 
 #' Creates a reactive plot that is suitable for assigning to an \code{output} 
@@ -37,6 +32,15 @@ ShinyReactiveEnvironment <- setRefClass(
   contains=c('ReactiveEnvironment'),
   fields = c('shinyapp'),
   methods = list(
+    registerReactives = function(){
+      callSuper()
+      .envir$reactivePlot <<- .self$reactivePlot
+      .envir$reactiveTable <<- .self$reactiveTable
+      .envir$reactivePrint <<- .self$reactivePrint
+      .envir$reactiveText <<- .self$reactiveText
+      .envir$reactiveUI <<- .self$reactiveUI
+      .envir$downloadHandler <<- .self$downloadHandler
+    },
     reactivePlot = function(plotFun, width='auto', height='auto', ...) {
       plotArgs <- list(...)
       .rs$NewReactiveFunction(
@@ -110,7 +114,7 @@ ShinyReactiveEnvironment <- setRefClass(
           
           pngData <- readBin(png.file, 'raw', n=bytes)
           if (app$allowDataUriScheme) {
-            b64 <- base64encode(pngData)
+            b64 <- caTools::base64encode(pngData)
             return(paste("data:image/png;base64,", b64, sep=''))
           }
           else {
@@ -130,7 +134,7 @@ ShinyReactiveEnvironment <- setRefClass(
         
         return(paste(
           capture.output(
-            print(xtable(data, ...), 
+            print(xtable::xtable(data, ...), 
                   type='html', 
                   html.table.attributes=paste('class="',
                                               htmlEscape(classNames, TRUE),
@@ -157,6 +161,25 @@ ShinyReactiveEnvironment <- setRefClass(
         # Wrap result in tagList in case it is an ordinary list
         return(as.character(tagList(result)))
       })$getValue
+    },
+    downloadHandler = function(filename, content, contentType=NA) {
+      # Not reactive at all. 
+      .rs$NewReactiveFunction(
+        setupFunc=function(envir=NULL,input=NULL,name=NULL){
+          shinyapp$registerDownload(name, filename, contentType, content)
+          e <- new.env()
+          with(e,{
+            name <- name
+            token <- shinyapp$token
+          })
+          e
+        },
+        func = function(){
+          return(sprintf('session/%s/download/%s',
+                         URLencode(token, TRUE),
+                         URLencode(name, TRUE)))
+        }
+      )$getValue
     }
   )
 )

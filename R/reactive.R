@@ -89,6 +89,7 @@ ReactiveSystem <- setRefClass(
         )
       }
       envir <<- .envirClass$new(.rs=.self)
+      envir$registerReactives()
     },
     setupEnvironmentWith = function(setupFun,class=ReactiveEnvironment){
 
@@ -99,10 +100,8 @@ ReactiveSystem <- setRefClass(
       if (is.null(input))
         input <<- .self$NewReactiveValues()
 
-      .envirClass$methods(setup=setupFun)
-
       outputFuns <- S3Map(Map$new())
-      envir$setup(input=input,output=outputFuns)
+      envir$setup(setupFun,input=input,output=outputFuns)
       output <<- S3Map(Map$new())
       for (key in names(outputFuns)){
         f <- outputFuns[[key]]
@@ -132,7 +131,22 @@ ReactiveObject <- setRefClass(
 ReactiveEnvironment <- setRefClass(
   'ReactiveEnvironment',
   contains=c('ReactiveObject'),
+  fields = list(.setupFunc = 'function',.envir='environment'),
   methods = list(
+    registerReactives = function(){
+      .envir$reactive <<- .self$reactive
+    },
+    setup = function(setupFun,input,output){
+      setSetupFunc(setupFun)
+      .setupFunc(input,output)
+    },
+    setSetupFunc = function(setupFun){
+      .setupFunc <<- setupFun
+      old.env <- environment(.setupFunc)
+      environment(.setupFunc) <<- .envir
+      parent.env(.envir) <<- old.env
+    },
+    getSetupFunc = function() .setupFunc,
     reactive = function(x,...){
       .rs$NewReactiveFunction(func=x)$getValue
     }
@@ -478,7 +492,7 @@ ReactiveFunction <- setRefClass(
       if (!is.environment(e)) return(invisible())
       old.env <- environment(.func)
       environment(.func) <<- e
-      parent.env(environment(.func)) <<- old.env
+      parent.env(e) <- old.env
       invisible()
     },
     invalidate = function(){
