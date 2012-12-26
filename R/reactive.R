@@ -78,35 +78,24 @@ ReactiveSystem <- setRefClass(
     },
     initializeEnvironment = function(class=ReactiveEnvironment){
       if (is.object(class))
-        superClass <- class$className
+        className <- class$className
       else if (is.character(class))
-        superClass <- class
+        className <- class
 
-      className <- paste('ReactiveClass__',digest(.self,algo='sha1'),sep='')
-      RClassName <- paste('.__C__',className,sep='')
-      if (exists(RClassName,globalenv())){
-        .envirClass <<-getRefClass(className)
-      } else {
-        .envirClass <<- setRefClass(
-          className,
-          contains=c(superClass),
-          where=globalenv()
-        )
-      }
-      envir <<- .envirClass$new(.rs=.self)
-      envir$registerReactives()
+      envir <<-getRefClass(className)$new(.rs=.self)
     },
-    setupEnvironmentWith = function(setupFun,class=ReactiveEnvironment){
+    define = function(fun,class=ReactiveEnvironment){
 
       if (is.null(envir))
         initializeEnvironment(class=class)
-
 
       if (is.null(input))
         input <<- .self$NewReactiveValues()
 
       outputFuns <- S3Map(Map$new())
-      envir$setup(setupFun,input=input,output=outputFuns)
+
+      envir$define(fun,input=input,output=outputFuns)
+
       output <<- S3Map(Map$new())
       for (key in names(outputFuns)){
         f <- outputFuns[[key]]
@@ -133,25 +122,55 @@ ReactiveObject <- setRefClass(
   fields = list(.rs='ReactiveSystem')
 )
 
+registerReactive = function(...,where=.globalReactiveEnv()){
+  funs <- list(...)
+  if ('' %in% names(funs))
+    stop("Must provide a name for each function")
+
+  for (n in names(funs))
+    assign(n,funs[[n]],pos=where)
+  invisible()
+}
+
+.reactiveEnvName <- '.__globalReactiveEnv'
+
+.globalReactiveEnv <- function(){
+  if (!exists(.reactiveEnvName,globalenv(),inherits=FALSE))
+    assign(.reactiveEnvName,new.env(parent=emptyenv()),globalenv())
+  invisible(get(.reactiveEnvName,globalenv()))
+}
+
 ReactiveEnvironment <- setRefClass(
   'ReactiveEnvironment',
   contains=c('ReactiveObject'),
-  fields = list(.setupFunc = 'function',.envir='environment'),
+  field = list(.envir='environment'),
   methods = list(
     registerReactives = function(){
-      .envir$reactive <<- .self$reactive
+      # Add reactive functions from the global cache first
+      # ::: is needed here for user/package subclasses
+      ge <- shiny:::.globalReactiveEnv()
+      for (i in objects(ge)){
+        .envir[[i]] <<- get(i,ge)
+        environment(.envir[[i]]) <<- .envir
+      }
+    
+      # Now add our methods
+      m <- setdiff(
+        .self$getRefClass()$methods(),
+        c('registerReactives','define',getRefClass('envRefClass')$methods())
+      )
+      for (i in grep('^\\..*',m,value=TRUE,invert=TRUE))
+         assign(i,eval(substitute(.self$x,list(x=i))),.envir)
+
+      invisible()
     },
-    setup = function(setupFun,input,output){
-      setSetupFunc(setupFun)
-      .setupFunc(input,output)
-    },
-    setSetupFunc = function(setupFun){
-      .setupFunc <<- setupFun
-      old.env <- environment(.setupFunc)
-      environment(.setupFunc) <<- .envir
+    define = function(fun,input,output){
+      registerReactives()
+      old.env <- environment(fun)
+      environment(fun) <- .envir
       parent.env(.envir) <<- old.env
+      invisible(fun(input,output))
     },
-    getSetupFunc = function() .setupFunc,
     reactive = function(x,...){
       .rs$NewReactiveFunction(func=x)$getValue
     }
@@ -585,3 +604,4 @@ ReactiveObserver <- setRefClass(
     }
   )
 )
+

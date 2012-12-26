@@ -1,7 +1,7 @@
 library(shiny)
 
 rs <- ReactiveSystem$new()
-rs$setupEnvironmentWith(
+rs$define(
   function(input,output){
     re <- reactive(function(){
       cat("re():input$n(",input$n,")\n")

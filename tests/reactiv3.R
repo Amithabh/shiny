@@ -5,16 +5,12 @@ MyReactiveEnv <- setRefClass(
   contains = 'ReactiveEnvironment',
   field = list(id='integer'),
   methods = list(
-    registerReactives = function(){
-      callSuper()
-      .envir$reactivePuppet <- .self$reactivePuppet
-    },
-    nextId = function() { id <<- if(length(id)) id + 1L else 1L },
+    .nextId = function() { id <<- if(length(id)) id + 1L else 1L },
     reactivePuppet = function(fun){
       .rs$NewReactiveFunction(
         setupFunc=function(envir=NULL,input=NULL,name=NULL){
-          puppetName <- paste(name,as.character(nextId()),sep='')
-          input[[puppetName]] <- as.character(nextId())
+          puppetName <- paste(name,as.character(.nextId()),sep='')
+          input[[puppetName]] <- as.character(.nextId())
           e <- new.env()
           with(e,{
               input <- input
@@ -33,7 +29,7 @@ MyReactiveEnv <- setRefClass(
 
 rs <- ReactiveSystem$new()
 
-rs$setupEnvironmentWith(
+rs$define(
   function(input,output){
     output$puppet <- reactivePuppet(function() {
       cat('walks\n')

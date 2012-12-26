@@ -32,16 +32,6 @@ ShinyReactiveEnvironment <- setRefClass(
   contains=c('ReactiveEnvironment'),
   fields = c('shinyapp'),
   methods = list(
-    registerReactives = function(){
-      callSuper()
-      .envir$reactivePlot <<- .self$reactivePlot
-      .envir$reactiveTable <<- .self$reactiveTable
-      .envir$reactivePrint <<- .self$reactivePrint
-      .envir$reactiveText <<- .self$reactiveText
-      .envir$reactiveUI <<- .self$reactiveUI
-      .envir$downloadHandler <<- .self$downloadHandler
-      .envir$invalidateLater <<- .self$invalidateLater
-    },
     reactivePlot = function(plotFun, width='auto', height='auto', ...) {
       plotArgs <- list(...)
       .rs$NewReactiveFunction(
@@ -126,7 +116,7 @@ ShinyReactiveEnvironment <- setRefClass(
       )$getValue
     },
     reactiveTable = function(func, ...) {
-      .rs$NewReactiveFunction(function() {
+      reactive(function() {
         classNames <- getOption('shiny.table.class', 'data table table-bordered table-condensed')
         data <- func()
 
@@ -142,26 +132,26 @@ ShinyReactiveEnvironment <- setRefClass(
                                               '"',
                                               sep=''), ...)),
           collapse="\n"))
-      })$getValue
+      })
     },
     reactivePrint = function(func) {
-      .rs$NewReactiveFunction(function() {
+      reactive(function() {
         return(paste(capture.output(print(func())), collapse="\n"))
-      })$getValue
+      })
     }, 
     reactiveText = function(func) {
-      .rs$NewReactiveFunction(function() {
+      reactive(function() {
         return(paste(capture.output(cat(func())), collapse="\n"))
-      })$getValue
+      })
     },
     reactiveUI = function(func) {
-      .rs$NewReactiveFunction(function() {
+      reactive(function() {
         result <- func()
         if (is.null(result) || length(result) == 0)
           return(NULL)
         # Wrap result in tagList in case it is an ordinary list
         return(as.character(tagList(result)))
-      })$getValue
+      })
     },
     downloadHandler = function(filename, content, contentType=NA) {
       # Not reactive at all. 
@@ -189,6 +179,8 @@ ShinyReactiveEnvironment <- setRefClass(
         ctx$invalidate()
         .rs$flush()
       })
+      invisible(NULL)
     }
   )
 )
+
