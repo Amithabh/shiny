@@ -5,7 +5,7 @@ ReactiveSystem <- setRefClass(
   methods = list(
     initialize = function() {
       .currentContext <<- NULL
-      .nextId <<- 100L
+      .nextId <<- 0L
       .pendingInvalidate <<- Map$new()
       .objects <<- Map$new()
       .envirClass <<- NULL
@@ -18,7 +18,7 @@ ReactiveSystem <- setRefClass(
       .currentContext
     },
     nextId = function() {
-      .nextId <<- .nextId - 1L
+      .nextId <<- .nextId + 1L
       return(as.character(.nextId))
     },
     addPendingInvalidate = function(ctx) {
