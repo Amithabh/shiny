@@ -1,7 +1,7 @@
 library(shiny)
 
 rs <- ReactiveSystem$new()
-rs$define(
+rs$withFunction(
   function(input,output){
     re <- reactive(function(){
       cat("re():input$n(",input$n,")\n")

@@ -25,6 +25,7 @@ Map <- setRefClass(
         return(NULL)
     },
     set = function(key, value) {
+      attr(value,'.MapElementName') <- key
       assign(key, value, pos=.env, inherits=FALSE)
       invisible(value)
     },
@@ -113,14 +114,6 @@ S3Map <- function(map){
 `[[<-.S3map` <- function(x,name,value){
   class(x) <- 'list'
   x[['impl']]$set(as.character(name),value)
-  class(x) <- 'S3map'
-  x
-}
-
-`<-.S3map` <- function(x,value){
-  if(!is('list',value)) stop("Value not a list!")
-  class(x) <- 'list'
-  invisible(x[['impl']]$mset(value))
   class(x) <- 'S3map'
   x
 }

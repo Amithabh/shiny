@@ -8,7 +8,7 @@ registerReactive(reactiveSum=reactiveSum)
 
 rs <- ReactiveSystem$new()
 
-rs$define(
+rs$withFunction(
   function(input,output){
     output$sumX <- reactiveSum(function(){
       cat('reactiveSum\n')
@@ -18,4 +18,5 @@ rs$define(
 )
 rs$input$x <- rnorm(10)
 cat(rs$output$sumX(),'\n')
+rs$input$x <- rnorm(10)
 rs$flush()

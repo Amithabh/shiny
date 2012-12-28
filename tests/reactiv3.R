@@ -3,40 +3,38 @@ library(shiny)
 MyReactiveEnv <- setRefClass(
   'MyReactiveEnv',
   contains = 'ReactiveEnvironment',
-  field = list(id='integer'),
+  field = c('input'),
   methods = list(
-    .nextId = function() { id <<- if(length(id)) id + 1L else 1L },
     reactivePuppet = function(fun){
-      .rs$NewReactiveFunction(
-        setupFunc=function(envir=NULL,input=NULL,name=NULL){
-          puppetName <- paste(name,as.character(.nextId()),sep='')
-          input[[puppetName]] <- as.character(.nextId())
-          e <- new.env()
-          with(e,{
-              input <- input
-              puppetName <- puppetName
-          })
-          e
-        },
-        func=function(){
-          cat('calling',puppetName,',input is',input[[puppetName]],'\n')
+      reactive(function(){
+          cat(.reactiveName,'(input is',input[[.reactiveName]],') ')
           fun()
         }
-      )$getValue
+      )
     }
   )
 )
 
 rs <- ReactiveSystem$new()
+rs$initializeEnvironment(MyReactiveEnv)
+rs$envir$input <- rs$input <- rs$NewReactiveValues()
 
-rs$define(
+rs$withFunction(
   function(input,output){
-    output$puppet <- reactivePuppet(function() {
+    output$puppet1 <- reactivePuppet(function() {
       cat('walks\n')
+    })
+    output$puppet2 <- reactivePuppet(function() {
+      cat('talks\n')
     })
   },
   MyReactiveEnv
 )
-rs$output$puppet()
 rs$input$puppet1 <- 'foo'
+rs$input$puppet2 <- 'bar'
+rs$output$puppet1()
+rs$output$puppet2()
+rs$flush()
+rs$input$puppet1 <- 'bee'
+rs$input$puppet2 <- 'buz'
 rs$flush()

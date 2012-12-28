@@ -1,14 +1,13 @@
 ReactiveSystem <- setRefClass(
   'ReactiveSystem',
   fields = c('.currentContext','.nextId', '.pendingInvalidate',
-    '.objects','.inFlush','.envirClass', 'envir','input','output'),
+    '.objects','.inFlush','envir','input','output'),
   methods = list(
     initialize = function() {
       .currentContext <<- NULL
       .nextId <<- 0L
       .pendingInvalidate <<- Map$new()
       .objects <<- Map$new()
-      .envirClass <<- NULL
       .inFlush <<- FALSE
       envir <<- NULL
       input <<- NULL
@@ -66,8 +65,8 @@ ReactiveSystem <- setRefClass(
     NewReactiveValues = function(){
       S3ReactiveValues(ReactiveValues$new(.rs=.self))
     },
-    NewReactiveFunction = function(func=function(){},setupFunc=function(envir=NULL,input=NULL,name=NULL){}){
-      x <- ReactiveFunction$new(func=func,setupFunc=setupFunc,.rs=.self)
+    NewReactiveFunction = function(func=function(){}){
+      x <- ReactiveFunction$new(func=func,.rs=.self)
       .objects$set(nextId(),x)
       x
     },
@@ -76,6 +75,9 @@ ReactiveSystem <- setRefClass(
       .objects$set(nextId(),x)
       x
     },
+    NewMap = function(){
+      S3Map(Map$new())
+    },
     initializeEnvironment = function(class=ReactiveEnvironment){
       if (is.object(class))
         className <- class$className
@@ -83,8 +85,11 @@ ReactiveSystem <- setRefClass(
         className <- class
 
       envir <<-getRefClass(className)$new(.rs=.self)
+      envir$registerReactives()
+      
+      invisible()
     },
-    define = function(fun,class=ReactiveEnvironment){
+    withFunction = function(fun,class=ReactiveEnvironment){
 
       if (is.null(envir))
         initializeEnvironment(class=class)
@@ -92,23 +97,31 @@ ReactiveSystem <- setRefClass(
       if (is.null(input))
         input <<- .self$NewReactiveValues()
 
-      outputFuns <- S3Map(Map$new())
+      if (is.null(output))
+        output <<- S3Map(Map$new())
 
-      envir$define(fun,input=input,output=outputFuns)
+      old.env <- environment(fun)
+      environment(fun) <- envir$.envir
+      parent.env(envir$.envir) <<- old.env
+      fun(input=input,output=output)
+      environment(fun) <- old.env
+      envir$registerReactives()
+      parent.env(envir$.envir) <<- globalenv()
 
-      output <<- S3Map(Map$new())
-      for (key in names(outputFuns)){
-        f <- outputFuns[[key]]
-        if (class(f)=='refMethodDef' && exists('.self',environment(f),inherits=FALSE)){
-          obj <- get('.self',environment(f),inherits=FALSE)
-          if('setName' %in% getRefClass(class(obj))$methods())
-            obj$setName(key)
-          if('setup' %in% getRefClass(class(obj))$methods())
-            obj$setup()
-        }
-        output[[key]] <<- f
-      }
       invisible()
+    },
+    with = function(exprs){
+      if (is.null(envir))
+        initializeEnvironment()
+
+      ret <- eval(substitute(exprs),envir$.envir)
+      envir$registerReactives()
+      invisible(ret)
+    },
+    source = function(file) {
+      ret <- base::source(file,local=envir$.envir)
+      envir$registerReactives()
+      invisible(ret)
     },
     show = function()cat('A Reactive System\n'),
     walkObjects = function(fun){
@@ -157,19 +170,15 @@ ReactiveEnvironment <- setRefClass(
       # Now add our methods
       m <- setdiff(
         .self$getRefClass()$methods(),
-        c('registerReactives','define',getRefClass('envRefClass')$methods())
+        c('registerReactives',getRefClass('envRefClass')$methods())
       )
       for (i in grep('^\\..*',m,value=TRUE,invert=TRUE))
          assign(i,eval(substitute(.self$x,list(x=i))),.envir)
 
+      # And finally those of the Reactive System
+      .envir$NewMap <<- .rs$NewMap
+      .envir$ReactiveValues <<- .rs$NewReactiveValues
       invisible()
-    },
-    define = function(fun,input,output){
-      registerReactives()
-      old.env <- environment(fun)
-      environment(fun) <- .envir
-      parent.env(.envir) <<- old.env
-      invisible(fun(input,output))
     },
     reactive = function(x,...){
       .rs$NewReactiveFunction(func=x)$getValue
@@ -436,14 +445,6 @@ S3ReactiveValues <- function(re){
   x
 }
 
-`<-.reactiveValues` <- function(x,value){
-  if(!is('list',value)) stop("Value not a list!")
-  class(x) <- 'list'
-  invisible(x[['impl']]$mset(value))
-  class(x) <- 'reactiveValues'
-  x
-}
-
 as.list.reactiveValues <- function(x, ...) {
   class(x) <- 'list'
   x[['impl']]$mget()
@@ -482,9 +483,8 @@ ReactiveFunction <- setRefClass(
   'ReactiveFunction',
   contains = c('ReactiveObject'),
   fields = list(
-    .name = 'character',
     .func = 'function',
-    .setupFunc = 'function',
+    .funcName = 'character',
     .value = 'ANY',
     .ctx = 'ANY',
     .firstInvocation = 'logical',
@@ -492,32 +492,31 @@ ReactiveFunction <- setRefClass(
     .observerFun = 'function'
   ),
   methods = list(
-    initialize = function(func=function(){},setupFunc=function(envir=NULL,input=NULL,name=NULL){},...) {
+    initialize = function(func=function(){},...) {
       callSuper(...)
       .func <<- func
-      .setupFunc <<- setupFunc
+      .funcName <<- character()
       .ctx <<- .rs$NewContext()
       .ctx$onInvalidate(.self$getValue)
       .firstInvocation <<- TRUE
       .isObserver <<- FALSE
     },
-    setName = function(n){
-      .name <<- n
+    name = function(n=NULL){
+      if(!missing(n))
+        .funcName <<- n
+      .funcName
     },
-    getName = function() .name,
-    setReactiveFunction = function(func){
-      .func <<- func
-    },
-    setSetupFunction = function(func){
-      .setupFunc <<- func
-    },
-    setup = function(){
-      e <- try(.setupFunc(envir=.rs$envir,input=.rs$input,name=.name),silent=FALSE)
-      if (!is.environment(e)) return(invisible())
-      old.env <- environment(.func)
-      environment(.func) <<- e
-      parent.env(e) <- old.env
-      invisible()
+    .fixupFormals = function(f){
+      n <- attr(f,'.MapElementName',exact=TRUE)
+      if (!is.null(n))
+        name(n=n)
+
+      f <- formals(.func)
+      if (is.null(f))
+        f <- list()
+
+      f$.reactiveName <- name()
+      formals(.func) <<- f
     },
     invalidate = function(){
       if (isObserver()){
@@ -528,14 +527,16 @@ ReactiveFunction <- setRefClass(
       .ctx$invalidate()
     },
     isObserver = function(val=FALSE){
-      if (missing(val)) return(.isObserver)
-      .isObserver <<- val
+      if (!missing(val)) 
+        .isObserver <<- val
+      .isObserver
     },
     getValue = function(...) {
       .ctx$addDependant()
 
       if (.firstInvocation){
         .firstInvocation <<- FALSE
+        .fixupFormals(sys.function())
         .ctx$invalidateHint()
         .ctx$run(function() {
           #.value <<- try(.func(), silent=FALSE)
@@ -561,7 +562,8 @@ ReactiveFunction <- setRefClass(
         .ctx$validate()
         .ctx$.dependencies <<- .rs$NewDependencies()
         .ctx$run(function() {
-          .value <<- try(.func(), silent=FALSE)
+          #.value <<- try(.func(), silent=FALSE)
+          .value <<- .func()
         })
         .ctx$visited(TRUE)
       }
@@ -576,9 +578,6 @@ ReactiveFunction <- setRefClass(
     observeWith = function(func){
       .observerFun <<- func
       .ctx$onInvalidateHint(.observerFun)
-    },
-    isObserver = function(){
-      .isObserver <<- TRUE
     }
   )
 )

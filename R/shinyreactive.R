@@ -34,54 +34,34 @@ ShinyReactiveEnvironment <- setRefClass(
   methods = list(
     reactivePlot = function(plotFun, width='auto', height='auto', ...) {
       plotArgs <- list(...)
-      .rs$NewReactiveFunction(
-        setupFunc=function(envir=NULL,input=NULL,name=NULL){
-          e <- new.env()
-          with(e,{
-            input <- input
-            app <- envir$shinyapp
-            plotArgs <- plotArgs
-            name <- name
-            prefix <- '.shinyout_'
+      
+      if (is.function(width))
+        width <- reactive(width)
+      if (is.function(height))
+        height <- reactive(height)
+
+      reactive(function() {
+          png.file <- tempfile(fileext='.png')
+
+          if (is.function(width))
+            width <- width()
+          if (is.function(height))
+            height <- height()
+          
           # Note that these are reactive calls. A change to the width and height
           # will inherently cause a reactive plot to redraw (unless width and 
           # height were explicitly specified).
-            if (is.function(width))
-              width <- reactive(width)
-            else if (width == 'auto'){
-              width_key <- paste(prefix, name, '_width', sep='')
-              width <- input[[width_key]] <- 0
-            } else {
-              width_key='fixed'
-              width <- width
-            }
-            if (is.function(height))
-              height <- reactive(height)
-            else if (height == 'auto'){
-              height_key <- paste(prefix, name, '_height', sep='')
-              height <- input[[height_key]] <- 0
-            } else {
-              height_key='fixed'
-              height <- height
-            }
-          })
-          e
-        },
-        func=function() {
-          png.file <- tempfile(fileext='.png')
-          
-          if (is.function(width))
-            width <- width()
-          else if (width_key != 'fixed')
-            width <- input[[width_key]]
-
-          if (is.function(height))
-            height <- height()
-          else if (height_key != 'fixed')
-            height <- input[[height_key]]
+          if (lenght(.reactiveName)>0){
+            prefix <- '.shinyout_'
+            if (width == 'auto')
+              width <- shinyapp$reactive$input[[paste(prefix, .reactiveName, '_width', sep='')]];
+            if (height == 'auto')
+              height <- shinyapp$reactive$input[[paste(prefix, .reactiveName, '_height', sep='')]];
+          }
           
           if (width <= 0 || height <= 0)
             return(NULL)
+          
 
           # If quartz is available, use png() (which will default to quartz).
           # Otherwise, if the Cairo package is installed, use CairoPNG().
@@ -104,16 +84,16 @@ ShinyReactiveEnvironment <- setRefClass(
             return(NULL)
           
           pngData <- readBin(png.file, 'raw', n=bytes)
-          if (app$allowDataUriScheme) {
+          if (shinyapp$allowDataUriScheme) {
             b64 <- caTools::base64encode(pngData)
             return(paste("data:image/png;base64,", b64, sep=''))
           }
           else {
-            imageUrl <- app$savePlot(name, pngData, 'image/png')
+            imageUrl <- shinyapp$savePlot(name, pngData, 'image/png')
             return(imageUrl)
           }
         }
-      )$getValue
+      )
     },
     reactiveTable = function(func, ...) {
       reactive(function() {
@@ -155,27 +135,17 @@ ShinyReactiveEnvironment <- setRefClass(
     },
     downloadHandler = function(filename, content, contentType=NA) {
       # Not reactive at all. 
-      .rs$NewReactiveFunction(
-        setupFunc=function(envir=NULL,input=NULL,name=NULL){
-          shinyapp$registerDownload(name, filename, contentType, content)
-          e <- new.env()
-          with(e,{
-            name <- name
-            token <- shinyapp$token
-          })
-          e
-        },
-        func = function(){
+      reactive(function(){
+          shinyapp$registerDownload(.reactiveName, filename, contentType, content)
           return(sprintf('session/%s/download/%s',
-                         URLencode(token, TRUE),
-                         URLencode(name, TRUE)))
+                         URLencode(shinyapp$token, TRUE),
+                         URLencode(.reactiveName, TRUE)))
         }
-      )$getValue
+      )
     },
     invalidateLater = function(millis) {
       ctx <- .rs$currentContext()
       shinyapp$timerCallbacks$schedule(millis, function() {
-        cat('invalidiating again\n')
         ctx$invalidate()
         .rs$flush()
       })

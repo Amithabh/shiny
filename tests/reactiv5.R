@@ -1,8 +1,10 @@
 library(shiny)
 
 rs <- ReactiveSystem$new()
-rs$withFunction(
-  function(input,output){
+rs$with({
+  input <- ReactiveValues()
+  output <- NewMap()
+  setup <- function(input,output){
     re <- reactive(function(){
       cat("re():input$n(",input$n,")\n")
       input$n
@@ -15,13 +17,16 @@ rs$withFunction(
       'foo'
     })
   }
-)
-rs$input$n <- 1 
-o <- rs$NewReactiveObserver(rs$output$ntext)
+  setup(input,output)
+})
+input <- rs$with({input})
+output <- rs$with({output})
+input$n <- 1 
+o <- rs$NewReactiveObserver(output$ntext)
 o$observeWith(function() cat("ntext calling\n"))
 o$invalidate()
 rs$flush()
 for (i in 2:10){
-  rs$input$n <- i
+  input$n <- i
   rs$flush()
 }

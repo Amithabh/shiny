@@ -740,7 +740,7 @@ startApp <- function(port=8101L) {
         shinyapp$allowDataUriScheme <- msg$data[['__allowDataUriScheme']]
         msg$data[['__allowDataUriScheme']] <- NULL
         shinyapp$reactive$envir$shinyapp <- shinyapp
-        shinyapp$reactive$define(serverFunc)
+        shinyapp$reactive$withFunction(serverFunc)
         lapply(names(msg$data),function(n){
           shinyapp$reactive$input[[n]] <- msg$data[[n]]
         })
