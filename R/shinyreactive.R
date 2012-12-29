@@ -51,7 +51,7 @@ ShinyReactiveEnvironment <- setRefClass(
           # Note that these are reactive calls. A change to the width and height
           # will inherently cause a reactive plot to redraw (unless width and 
           # height were explicitly specified).
-          if (lenght(.reactiveName)>0){
+          if (length(.reactiveName)>0){
             prefix <- '.shinyout_'
             if (width == 'auto')
               width <- shinyapp$reactive$input[[paste(prefix, .reactiveName, '_width', sep='')]];

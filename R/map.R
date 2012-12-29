@@ -25,7 +25,8 @@ Map <- setRefClass(
         return(NULL)
     },
     set = function(key, value) {
-      attr(value,'.MapElementName') <- key
+      if (!is.null(value))
+         attr(value,'.MapElementName') <- key
       assign(key, value, pos=.env, inherits=FALSE)
       invisible(value)
     },
