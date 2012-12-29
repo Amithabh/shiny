@@ -18,6 +18,7 @@ ShinyApp <- setRefClass(
     .websocket = 'list',
     .invalidatedOutputValues = 'Map',
     .invalidatedOutputErrors = 'Map',
+    .progressKeys = 'character',
     .fileUploadContext = 'FileUploadContext',
     timerCallbacks = 'TimerCallbacks',
     reactive = 'ANY',
@@ -31,6 +32,7 @@ ShinyApp <- setRefClass(
       .websocket <<- ws
       .invalidatedOutputValues <<- Map$new()
       .invalidatedOutputErrors <<- Map$new()
+      .progressKeys <<- character(0)
       # TODO: Put file upload context in user/app-specific dir if possible
       .fileUploadContext <<- FileUploadContext$new()
       reactive <<- ReactiveSystem$new()
@@ -79,10 +81,13 @@ ShinyApp <- setRefClass(
       }
     },
     flushOutput = function() {
-      if (length(.invalidatedOutputValues) == 0
+      if (length(.progressKeys) == 0
+          && length(.invalidatedOutputValues) == 0
           && length(.invalidatedOutputErrors) == 0) {
         return(invisible())
       }
+      
+      .progressKeys <<- character(0)
       
       values <- .invalidatedOutputValues
       .invalidatedOutputValues <<- Map$new()
@@ -99,8 +104,14 @@ ShinyApp <- setRefClass(
       by \\code{id} is in progress. There is currently no mechanism for
       explicitly turning off progress for an output component; instead, all
       progress is implicitly turned off when flushOutput is next called.'
-
-      .write(toJSON(list(progress=list(id))))
+      if (id %in% .progressKeys)
+        return()
+      
+      .progressKeys <<- c(.progressKeys, id)
+      
+      json <- toJSON(list(progress=list(id)))
+      
+      .write(json)
     },
     dispatch = function(msg) {
       method <- paste('@', msg$method, sep='')
@@ -941,13 +952,9 @@ runGist <- function(gist,
                                              interactive())) {
 
   gistUrl <- if (is.numeric(gist) || grepl('^[0-9a-f]+$', gist)) {
-    sprintf('https://gist.github.com/gists/%s/download', gist)
+    sprintf('https://gist.github.com/%s/download', gist)
   } else if(grepl('^https://gist.github.com/([0-9a-f]+)$', gist)) {
-    paste(sub('https://gist.github.com/',
-              'https://gist.github.com/gists/',
-              gist),
-          '/download',
-          sep='')
+    paste(gist, '/download', sep='')
   } else {
     stop('Unrecognized gist identifier format')
   }

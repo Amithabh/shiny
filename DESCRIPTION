@@ -1,10 +1,10 @@
 Package: shiny
 Type: Package
 Title: Web Application Framework for R
-Version: 0.2.3
+Version: 0.2.4.99
 Date: 2012-11-30
 Author: RStudio, Inc.
-Maintainer: Joe Cheng <joe@rstudio.org>
+Maintainer: Winston Chang <winston@rstudio.com>
 Description: Shiny makes it incredibly easy to build interactive web
     applications with R. Automatic "reactive" binding between inputs and
     outputs and extensive pre-built widgets make it possible to build
@@ -24,8 +24,9 @@ Imports:
     xtable,
     digest
 Suggests:
-    markdown
-URL: https://github.com/rstudio/shiny, http://rstudio.github.com/shiny/tutorial
+    markdown,
+    Cairo
+URL: http://www.rstudio.com/shiny/
 BugReports: https://github.com/rstudio/shiny/issues
 Collate:
     'map.R'
