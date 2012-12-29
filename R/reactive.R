@@ -539,8 +539,7 @@ ReactiveFunction <- setRefClass(
         .fixupFormals(sys.function())
         .ctx$invalidateHint()
         .ctx$run(function() {
-          #.value <<- try(.func(), silent=FALSE)
-          .value <<- .func()
+          .value <<- try(.func(), silent=FALSE)
         })
         if (isObserver()){
           lapply(.ctx$.dependencies$contexts(),function(ctx){
@@ -562,8 +561,7 @@ ReactiveFunction <- setRefClass(
         .ctx$validate()
         .ctx$.dependencies <<- .rs$NewDependencies()
         .ctx$run(function() {
-          #.value <<- try(.func(), silent=FALSE)
-          .value <<- .func()
+          .value <<- try(.func(), silent=FALSE)
         })
         .ctx$visited(TRUE)
       }
