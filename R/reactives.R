@@ -143,7 +143,7 @@ Observable <- setRefClass(
   fields = list(
     .func = 'function',
     .dependencies = 'Dependencies',
-    .initialized = 'logical',
+    .dirty = 'logical',
     .value = 'ANY'
   ),
   methods = list(
@@ -153,12 +153,12 @@ Observable <- setRefClass(
              "or more parameters; only functions without parameters can be ",
              "reactive.")
       .func <<- func
-      .initialized <<- FALSE
+      .dirty <<- TRUE
     },
     getValue = function() {
-      if (!.initialized) {
-        .initialized <<- TRUE
+      if (.dirty) {
         .self$.updateValue()
+        .dirty <<- FALSE
       }
       
       .dependencies$register()
@@ -168,11 +168,10 @@ Observable <- setRefClass(
       return(.value)
     },
     .updateValue = function() {
-      old.value <- .value
-      
       ctx <- Context$new()
       ctx$onInvalidate(function() {
-        .self$.updateValue()
+        .dirty <<- TRUE
+        .dependencies$invalidate()
       })
       ctx$onInvalidateHint(function() {
         .dependencies$invalidateHint()
@@ -180,9 +179,6 @@ Observable <- setRefClass(
       ctx$run(function() {
         .value <<- try(.func(), silent=FALSE)
       })
-      if (!identical(old.value, .value)) {
-        .dependencies$invalidate()
-      }
     }
   )
 )
