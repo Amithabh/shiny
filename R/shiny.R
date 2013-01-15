@@ -295,7 +295,7 @@ ShinyApp <- setRefClass(
 
 #' @S3method $<- shinyoutput
 `$<-.shinyoutput` <- function(x, name, value) {
-  x[['impl']]$defineOutput(name, value, deparse(substitute(value)))
+  x[['impl']]$defineOutput(name, value, paste('output', name, sep='$'))
   return(invisible(x))
 }
 

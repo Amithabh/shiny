@@ -1,7 +1,10 @@
+.realstdout <- stdout()
+
 Context <- setRefClass(
   'Context',
   fields = list(
     id = 'character',
+    .trace = 'logical',         # For debug purposes
     .label = 'character',      # For debug purposes
     .invalidated = 'logical',
     .invalidateCallbacks = 'list',
@@ -10,6 +13,7 @@ Context <- setRefClass(
   methods = list(
     initialize = function(label=NULL) {
       id <<- .getReactiveEnvironment()$nextId()
+      .trace <<- FALSE
       .invalidated <<- FALSE
       .invalidateCallbacks <<- list()
       .flushCallbacks <<- list()
@@ -26,6 +30,8 @@ Context <- setRefClass(
       if (.invalidated)
         return()
       .invalidated <<- TRUE
+      if (.trace)
+        cat(id, 'invalidated', .label, '\n', file = .realstdout)
 
       lapply(.invalidateCallbacks, function(func) {
         func()
@@ -62,6 +68,23 @@ Context <- setRefClass(
           # TODO: Callbacks in app
         })
       })
+    },
+    trace = function(label) {
+      if (!.trace)
+        return()
+      cat('/--\n  ', file=.realstdout)
+      cat(id, ' ', file=.realstdout)
+      cat(.label, file=.realstdout)
+      cat('\n    depends on\n  ', file=.realstdout)
+      cat(label, file=.realstdout)
+      cat('\n', file=.realstdout)
+      cat('\\--\n', file=.realstdout)
+    },
+    setTracing = function(on=TRUE) {
+      .trace <<- on
+      if (on) {
+        cat('Tracing', id, .label, '\n', file=.realstdout)
+      }
     }
   )
 )

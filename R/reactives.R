@@ -1,16 +1,27 @@
+traceReactives <- function() {
+  .getReactiveEnvironment()$currentContext()$setTracing(TRUE)
+}
+# @export
+`label<-` <- function(reactiveFunction, value) {
+  environment(reactiveFunction)$.label <- value
+  return(reactiveFunction)
+}
+
 Dependencies <- setRefClass(
   'Dependencies',
   fields = list(
     .dependencies = 'Map'
   ),
   methods = list(
-    register = function() {
+    register = function(label='(Unspecified)') {
       ctx <- .getReactiveEnvironment()$currentContext()
       if (!.dependencies$containsKey(ctx$id)) {
         .dependencies$set(ctx$id, ctx)
         ctx$onInvalidate(function() {
           .dependencies$remove(ctx$id)
         })
+
+        ctx$trace(label)
       }
     },
     invalidate = function() {
@@ -36,7 +47,7 @@ ReactiveValue <- setRefClass(
       .value <<- value
     },
     get = function() {
-      .dependencies$register()
+      .dependencies$register('reactiveValue')
       return(.value)
     },
     set = function(value) {
@@ -97,6 +108,7 @@ Values <- setRefClass(
         ctx$onInvalidate(function() {
           rm(list=dep.key, pos=.dependencies, inherits=FALSE)
         })
+        ctx$trace(paste('input', key, sep='$'))
       }
       
       if (!exists(key, where=.values, inherits=FALSE))
@@ -137,11 +149,11 @@ Values <- setRefClass(
              })
     },
     names = function() {
-      .namesDeps$register()
+      .namesDeps$register('values$names()')
       return(ls(.values, all.names=TRUE))
     },
     toList = function() {
-      .allDeps$register()
+      .allDeps$register('values$toList()')
       return(as.list(.values))
     }
   )
@@ -184,6 +196,7 @@ Observable <- setRefClass(
     .label = 'character',
     .dependencies = 'Dependencies',
     .dirty = 'logical',
+    .running = 'logical',
     .value = 'ANY',
     .execCount = 'integer'
   ),
@@ -199,11 +212,11 @@ Observable <- setRefClass(
       .execCount <<- 0L
     },
     getValue = function() {
-      if (.dirty) {
+      if (.dirty || .running) {
         .self$.updateValue()
       }
       
-      .dependencies$register()
+      .dependencies$register(.label)
       
       if (identical(class(.value), 'try-error'))
         stop(attr(.value, 'condition'))
