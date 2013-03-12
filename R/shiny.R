@@ -183,13 +183,19 @@ ShinyApp <- setRefClass(
     },
     
     # Public RPC methods
-    `@uploadInit` = function(fileSizes) {
+    `@uploadInit` = function(fileInfos) {
       maxSize <- getOption('shiny.maxRequestSize', 5 * 1024 * 1024)
-      if (maxSize > 0 && any(fileSizes > maxSize)) {
+      fileInfos <- lapply(fileInfos, function(fi) {
+        if (is.null(fi$type))
+          fi$type <- getContentType(tools::file_ext(fi$name))
+        fi
+      })
+      sizes <- sapply(fileInfos, function(fi){ fi$size })
+      if (maxSize > 0 && any(sizes > maxSize)) {
         stop("Maximum upload size exceeded")
       }
 
-      jobId <- .fileUploadContext$createUploadOperation()
+      jobId <- .fileUploadContext$createUploadOperation(fileInfos)
       return(list(jobId=jobId,
                   uploadUrl=paste('session', token, 'upload', jobId, sep='/')))
     },
@@ -225,7 +231,7 @@ ShinyApp <- setRefClass(
           fileName <- req$HTTP_SHINY_FILE_NAME
           fileType <- req$HTTP_SHINY_FILE_TYPE
           fileSize <- req$CONTENT_LENGTH
-          job$fileBegin(list(name=fileName, type=fileType, size=fileSize))
+          job$fileBegin()
           
           input <- req$rook.input
           while (length(buf <- input$read(2^16)) > 0)
