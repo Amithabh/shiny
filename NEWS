@@ -1,6 +1,8 @@
 shiny 0.6.0.99
 --------------------------------------------------------------------------------
 
+* Add shiny.shared.secret option, intended to be used by Shiny Server for
+  security purposes.
 
 shiny 0.6.0
 --------------------------------------------------------------------------------
