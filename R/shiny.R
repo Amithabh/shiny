@@ -1124,18 +1124,19 @@ decodeMessage <- function(data) {
 
 # Combine dir and (file)name into a file path. If a file already exists with a
 # name differing only by case, then use it instead.
-file.path.ci <- function(dir, name) {
-  default <- file.path(dir, name)
-  if (file.exists(default))
-    return(default)
-  if (!file.exists(dir))
-    return(default)
+file.path.ci <- function(...) {
+  default <- file.path(...)
+  if (file.exists(default)) return(default)
 
-  matches <- list.files(dir, name, ignore.case=TRUE, full.names=TRUE,
-                        include.dirs=TRUE)
-  if (length(matches) == 0)
-    return(default)
-  return(matches[[1]])
+  dir <- dirname(default)
+  if (!file.exists(dir)) return(default)
+
+  pattern <- glob2rx(basename(default)) # Not perfect, but safer than raw name
+  matches <- list.files(dir, pattern, ignore.case = TRUE,
+    full.names = TRUE, include.dirs = TRUE, all.files = TRUE)
+  if (length(matches) == 0) return(default)
+
+  matches[[1]]
 }
 
 # Instantiates the app in the current working directory.
