@@ -253,31 +253,6 @@ renderPage <- function(ui, connection, showcase=0) {
 #'
 #' @export
 shinyUI <- function(ui, path='/') {
-
-  force(ui)
-
-  registerClient({
-
-    function(req) {
-      if (!identical(req$REQUEST_METHOD, 'GET'))
-        return(NULL)
-
-      if (req$PATH_INFO != path)
-        return(NULL)
-
-      textConn <- textConnection(NULL, "w")
-      on.exit(close(textConn))
-
-      showcaseMode <- .globals$showcaseDefault
-      if (.globals$showcaseOverride) {
-        mode <- showcaseModeOfReq(req)
-        if (!is.null(mode))
-          showcaseMode <- mode
-      }
-      renderPage(ui, textConn, showcaseMode)
-      html <- paste(textConnectionValue(textConn), collapse='\n')
-      return(httpResponse(200, content=html))
-    }
-  })
+  return(ui)
 }
 

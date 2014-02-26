@@ -810,7 +810,31 @@ dynamicHandler <- function(filePath, dependencyFiles=filePath) {
       if (file.exists(filePath)) {
         local({
           cacheContext$with(function() {
-            sys.source(filePath, envir=new.env(parent=globalenv()), keep.source=TRUE)
+            ui <- source(filePath, local=new.env(parent=globalenv()), keep.source=TRUE)$value
+            path <- "/"
+            registerClient({
+
+              function(req) {
+                if (!identical(req$REQUEST_METHOD, 'GET'))
+                  return(NULL)
+
+                if (req$PATH_INFO != path)
+                  return(NULL)
+
+                textConn <- textConnection(NULL, "w")
+                on.exit(close(textConn))
+
+                showcaseMode <- .globals$showcaseDefault
+                if (.globals$showcaseOverride) {
+                  mode <- showcaseModeOfReq(req)
+                  if (!is.null(mode))
+                    showcaseMode <- mode
+                }
+                renderPage(ui, textConn, showcaseMode)
+                html <- paste(textConnectionValue(textConn), collapse='\n')
+                return(httpResponse(200, content=html))
+              }
+            })
           })
         })
       }
@@ -1086,15 +1110,7 @@ resourcePathHandler <- function(req) {
 #'
 #' @export
 shinyServer <- function(func) {
-  .globals$server <- func
-  if (!is.null(func))
-  {
-    # Tag this function as the Shiny server function. A debugger may use this
-    # tag to give this function special treatment.
-    attr(.globals$server, "shinyServerFunction") <- TRUE
-    registerDebugHook("server", .globals, "Server Function")
-  }
-  invisible()
+  return(func)
 }
 
 decodeMessage <- function(data) {
@@ -1156,9 +1172,13 @@ startAppDir <- function(port, host, workerId, quiet) {
 
   shinyServer(NULL)
   serverFileTimestamp <- file.info(serverR)$mtime
-  sys.source(serverR, envir=new.env(parent=globalenv()), keep.source=TRUE)
-  if (is.null(.globals$server))
+  .globals$server <- source(serverR, local=new.env(parent=globalenv()), keep.source=TRUE)$value
+  if (is.null(.globals$server) || !is.function(.globals$server))
     stop("No server was defined in server.R")
+  # Tag this function as the Shiny server function. A debugger may use this
+  # tag to give this function special treatment.
+  attr(.globals$server, "shinyServerFunction") <- TRUE
+  registerDebugHook("server", .globals, "Server Function")
 
   serverFuncSource <- function() {
     # Check if server.R has changed, and if so, reload
@@ -1166,9 +1186,15 @@ startAppDir <- function(port, host, workerId, quiet) {
     if (!identical(mtime, serverFileTimestamp)) {
       shinyServer(NULL)
       serverFileTimestamp <<- mtime
-      sys.source(serverR, envir=new.env(parent=globalenv()), keep.source=TRUE)
-      if (is.null(.globals$server))
+      func <- source(serverR, local=new.env(parent=globalenv()), keep.source=TRUE)$value
+      .globals$server <- func
+      if (is.null(.globals$server) || !is.function(.globals$server))
         stop("No server was defined in server.R")
+
+      # Tag this function as the Shiny server function. A debugger may use this
+      # tag to give this function special treatment.
+      attr(.globals$server, "shinyServerFunction") <- TRUE
+      registerDebugHook("server", .globals, "Server Function")
     }
     return(.globals$server)
   }
