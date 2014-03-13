@@ -216,6 +216,17 @@ tagWrite <- function(tag, textWriter, indent=0, eol = "\n") {
   if (anyDuplicated(names(attribs)))
     attribs <- lapply(split(attribs, names(attribs)), paste, collapse = " ")
 
+  if (!is.null(attribs$id) && !is.na(attribs$id) && length(attribs$id) == 1) {
+    if (grepl("\\.", attribs$id)) {
+      warning("The id attribute '", attribs$id, "' is not valid: The '.' character is illegal.")
+    } else if (grepl("\\:", attribs$id)) {
+      warning("The id attribute '", attribs$id, "' is not valid: The ':' character is illegal.")
+    } else if (!grepl("\\s*[a-zA-Z][a-zA-Z0-9\\-_]*\\s*", attribs$id)) {
+      warning("The id attribute '", attribs$id, "' is not valid: HTML ids must start with a letter\n",
+        "and contain only letters, numbers, dashes, and underscore.")
+    }
+  }
+
   # write attributes
   for (attrib in names(attribs)) {
     attribValue <- attribs[[attrib]]
