@@ -1067,13 +1067,59 @@
       $(el).removeClass('shiny-output-error');
     };
     this.showProgress = function(el, show) {
+      var $el = $(el);
+
+      var delayedProgress = $el.data('shiny-progress');
+      if (!delayedProgress) {
+        delayedProgress = new DelayedAppearance(
+          el, $('<div class="shiny-progress"></div>')[0]
+        );
+        $el.data('shiny-progress', delayedProgress);
+      }
+
       var RECALC_CLASS = 'recalculating';
-      if (show)
-        $(el).addClass(RECALC_CLASS);
-      else
-        $(el).removeClass(RECALC_CLASS);
+      if (show) {
+        $el.addClass(RECALC_CLASS);
+        if ($el.css('position') === 'static')
+          $el.css('position', 'relative');
+        var progressTiming = this.getProgressTiming(el);
+        delayedProgress.show(progressTiming.delay, progressTiming.duration);
+      }
+      else {
+        $el.removeClass(RECALC_CLASS);
+        delayedProgress.hide();
+      }
+    };
+    this.getProgressTiming = function(el) {
+      return {
+        delay: 1000,
+        duration: 2000
+      };
     };
   }).call(OutputBinding.prototype);
+
+  // Cancellable, delayed, fade-in appearance controller
+  function DelayedAppearance(el, child) {
+    this._el = el;
+    this._child = child;
+    this._timerId = null;
+  }
+  (function() {
+    this.show = function(delay, duration) {
+      var self = this;
+      this._timerId = setTimeout(function() {
+        self.hide();
+        $(self._el).append(self._child);
+        $(self._child).animate({opacity: 0.25}, duration);
+      }, delay);
+    };
+    this.hide = function() {
+      clearTimeout(this._timerId);
+      this._timerId = null;
+      this._child.style.opacity = 0;
+      $(this._child).stop().remove();
+    };
+  }).call(DelayedAppearance.prototype);
 
 
   var textOutputBinding = new OutputBinding();
@@ -2645,6 +2691,7 @@
           shinyapp.bindOutput(id, bindingAdapter);
           $(el).data('shiny-output-binding', bindingAdapter);
           $(el).addClass('shiny-bound-output');
+          bindingAdapter.showProgress(true);
         }
       }
 
