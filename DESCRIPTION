@@ -47,6 +47,7 @@ Collate:
     'middleware-shiny.R'
     'middleware.GENERATED.R'
     'priorityqueue.R'
+    'progress.R'
     'react.R'
     'reactive-domains.GENERATED.R'
     'reactives.R'

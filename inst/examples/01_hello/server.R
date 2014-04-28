@@ -14,6 +14,11 @@ shinyServer(function(input, output) {
     x    <- faithful[, 2]  # Old Faithful Geyser data
     bins <- seq(min(x), max(x), length.out = input$bins + 1)
 
+    withProgress({
+      setProgress("hello")
+      Sys.sleep(3)
+    })
+
     # draw the histogram with the specified number of bins
     hist(x, breaks = bins, col = 'darkgray', border = 'white')
   })
