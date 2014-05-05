@@ -274,6 +274,8 @@ knit_print.shiny.tag <- function(x, ...) {
   knitr::asis_output(html_preserve(format(content$ui, indent=FALSE)), meta = meta)
 }
 
+#' @rdname knitr_methods
+#' @export
 knit_print.html <- function(x, ...) {
   deps <- getNewestDeps(findDependencies(x))
   knitr::asis_output(html_preserve(as.character(x)),
@@ -284,6 +286,13 @@ knit_print.html <- function(x, ...) {
 #' @export
 knit_print.shiny.tag.list <- knit_print.shiny.tag
 
+#' @rdname knitr_methods
+#' @export
+knit_value.shiny.tag <- knit_print.shiny.tag
+
+#' @rdname knitr_methods
+#' @export
+knit_value.shiny.tag.list <- knit_print.shiny.tag
 
 # Lets us use a nicer syntax in knitr chunks than literally
 # calling output$value <- renderFoo(...) and fooOutput().
@@ -294,6 +303,10 @@ knit_print.shiny.render.function <- function(x, ...) {
   attr(output, "knit_cacheable") <- FALSE
   output
 }
+
+#' @rdname knitr_methods
+#' @export
+knit_value.shiny.render.function <- knit_print.shiny.render.function
 
 html_preserve <- function(x) {
   x <- paste(x, collapse = "\r\n")
